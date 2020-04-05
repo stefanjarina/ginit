@@ -881,9 +881,10 @@ get-stream@^4.0.0:
   dependencies:
     pump "^3.0.0"
 
-"gitignore.io@https://github.com/stefanjarina/gitignore.io":
+gitignore.io@^0.1.0:
   version "0.1.0"
-  resolved "https://github.com/stefanjarina/gitignore.io#41769d3ce45218374d1115a46354a147b09bf144"
+  resolved "https://registry.yarnpkg.com/gitignore.io/-/gitignore.io-0.1.0.tgz#3228b076848d2a575855a64f268dc48b264efb0e"
+  integrity sha512-EILdNXg2M1Z7N/HFsihTiXYh6KYghucHxEcY8C6nKBTK29KgUU/5vtAX2vJMAOn+6o++gqK5ONTROs+O1sclww==
   dependencies:
     axios "^0.19.2"
 
