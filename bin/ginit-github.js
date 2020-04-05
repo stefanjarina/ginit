@@ -1,8 +1,9 @@
 const program = require('commander');
+const githubCmd = require('../commands/github');
 
 program
   .name('ginit github')
-  .option('--test', 'test option', false)
-  .action(cmd => console.log(`${cmd}`));
+  .arguments('[repo_name] [description]')
+  .action((repoName, description) => githubCmd.run(repoName, description));
 
 program.parse(process.argv);

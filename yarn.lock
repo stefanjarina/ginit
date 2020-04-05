@@ -233,6 +233,13 @@ astral-regex@^1.0.0:
   resolved "https://registry.yarnpkg.com/astral-regex/-/astral-regex-1.0.0.tgz#6c8c3fb827dd43ee3918f27b82782ab7658a6fd9"
   integrity sha512-+Ryf6g3BKoRc7jfp7ad8tM4TtMiaWvbF/1/sQcZPkkS7ag3D5nMBCe2UfOTONtAkaG0tO0ij3C5Lwmf1EiyjHg==
 
+axios@^0.19.2:
+  version "0.19.2"
+  resolved "https://registry.yarnpkg.com/axios/-/axios-0.19.2.tgz#3ea36c5d8818d0d5f8a8a97a6d36b86cdc00cb27"
+  integrity sha512-fjgm5MvRHLhx+osE2xoekY70AhARk3a6hkN+3Io1jc00jtquGvxYlKlsFUhmUET0V5te6CcZI7lcv2Ym61mjHA==
+  dependencies:
+    follow-redirects "1.5.10"
+
 balanced-match@^1.0.0:
   version "1.0.0"
   resolved "https://registry.yarnpkg.com/balanced-match/-/balanced-match-1.0.0.tgz#89b4d199ab2bee49de164ea02b89ce462d71b767"
@@ -411,6 +418,13 @@ d@~0.1.1:
   integrity sha1-2hhMU10Y2O57oqoim5FACfrhEwk=
   dependencies:
     es5-ext "~0.10.2"
+
+debug@=3.1.0:
+  version "3.1.0"
+  resolved "https://registry.yarnpkg.com/debug/-/debug-3.1.0.tgz#5bb5a0672628b64149566ba16819e61518c67261"
+  integrity sha512-OX8XqP7/1a9cqkxYw2yXss15f26NKWBpDXQd0/uK/KPqdQhxbPa994hnzjcE2VqQpDslf55723cKPUOGSmMY3g==
+  dependencies:
+    ms "2.0.0"
 
 debug@^2.6.9:
   version "2.6.9"
@@ -833,6 +847,13 @@ flatted@^2.0.0:
   resolved "https://registry.yarnpkg.com/flatted/-/flatted-2.0.2.tgz#4575b21e2bcee7434aa9be662f4b7b5f9c2b5138"
   integrity sha512-r5wGx7YeOwNWNlCA0wQ86zKyDLMQr+/RB8xy74M4hTphfmjlijTSSXGuH8rnvKZnfT9i+75zmd8jcKdMR4O6jA==
 
+follow-redirects@1.5.10:
+  version "1.5.10"
+  resolved "https://registry.yarnpkg.com/follow-redirects/-/follow-redirects-1.5.10.tgz#7b7a9f9aea2fdff36786a94ff643ed07f4ff5e2a"
+  integrity sha512-0V5l4Cizzvqt5D44aTXbFZz+FtyXV1vrDN6qrelxtfYQKW0KO0W2T/hkE8xvGa/540LkZlkaUjO4ailYTFtHVQ==
+  dependencies:
+    debug "=3.1.0"
+
 fs.realpath@^1.0.0:
   version "1.0.0"
   resolved "https://registry.yarnpkg.com/fs.realpath/-/fs.realpath-1.0.0.tgz#1504ad2523158caa40db4a2787cb01411994ea4f"
@@ -859,6 +880,12 @@ get-stream@^4.0.0:
   integrity sha512-GMat4EJ5161kIy2HevLlr4luNjBgvmj413KaQA7jt4V8B4RDsfpHk7WQ9GVqfYyyx8OS/L66Kox+rJRNklLK7w==
   dependencies:
     pump "^3.0.0"
+
+"gitignore.io@https://github.com/stefanjarina/gitignore.io":
+  version "0.1.0"
+  resolved "https://github.com/stefanjarina/gitignore.io#41769d3ce45218374d1115a46354a147b09bf144"
+  dependencies:
+    axios "^0.19.2"
 
 glob-parent@^5.0.0:
   version "5.1.1"
