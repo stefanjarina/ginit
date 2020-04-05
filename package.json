@@ -3,7 +3,9 @@
   "version": "0.0.1",
   "description": "Custom GIT repository initializer",
   "main": "index.js",
-  "bin": "./bin/ginit.js",
+  "bin": {
+    "ginit": "./bin/ginit.js"
+  },
   "repository": "https://github.com/stefanjarina/ginit.git",
   "author": "Stefan Jarina <stefan@jarina.io>",
   "license": "MIT",
