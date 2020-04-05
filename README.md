@@ -34,6 +34,7 @@ ginit github --repo_name myrepo -description "This is my awesome repo"
 
 ## TODO
 
+- [ ] Search for better name as ginit is already used on NPM
 - Implement other repositories
   - [ ] Gitlab
   - [ ] BitBucket
