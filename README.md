@@ -35,19 +35,19 @@ ginit github --repo_name myrepo -description "This is my awesome repo"
 ## TODO
 
 - Implement other repositories
-  - [] Gitlab
-  - [] BitBucket
-  - [] Azure Devops
-- [] Add other config files with sane defaults
-- [] Add build system and Rewrite to TypeScript
+  - [ ] Gitlab
+  - [ ] BitBucket
+  - [ ] Azure Devops
+- [ ] Add other config files with sane defaults
+- [ ] Add build system and Rewrite to TypeScript
 - Quality control
-  - [] Check if all errors are properly handled
-  - [] Check if output messages make sense
-- [] Add tests
-- [] Publish to NPM
+  - [ ] Check if all errors are properly handled
+  - [ ] Check if output messages make sense
+- [ ] Add tests
+- [ ] Publish to NPM
 - And more ideas???
-  - [] add config functionality for setting "presets" or defaults
-  - [] check if 'search' is possible in user inputs
-  - [] add dynamic config files creation (maybe place configs in some folder and they will get picked up by application)
+  - [ ] add config functionality for setting "presets" or defaults
+  - [ ] check if 'search' is possible in user inputs
+  - [ ] add dynamic config files creation (maybe place configs in some folder and they will get picked up by application)
 
 ## Commands
