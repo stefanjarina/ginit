@@ -47,7 +47,7 @@ ginit github --repo_name myrepo -description "This is my awesome repo"
 - [ ] Publish to NPM
 - And more ideas???
   - [ ] add config functionality for setting "presets" or defaults
-  - [ ] check if 'search' is possible in user inputs
+  - [x] check if 'search' is possible in user inputs (implemented with inquirer checkbox-plus)
   - [ ] add dynamic config files creation (maybe place configs in some folder and they will get picked up by application)
 
 ## Commands
