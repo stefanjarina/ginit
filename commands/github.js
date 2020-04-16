@@ -2,7 +2,7 @@ const chalk = require('chalk');
 const clear = require('clear');
 const figlet = require('figlet');
 const files = require('../lib/files');
-const github = require('../lib/github');
+const github = require('../lib/api/github');
 const repo = require('../lib/repo');
 
 const getGithubToken = async () => {
