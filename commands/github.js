@@ -7,7 +7,7 @@ const repo = require('../lib/repo');
 
 const getGithubToken = async () => {
   // Fetch token from config store
-  let token = github.getStoredGithubToken();
+  let token = github.getStoredToken();
   if (token) {
     return token;
   }
@@ -34,10 +34,10 @@ module.exports = {
     try {
       // Retrieve and Set Authentication Token
       const token = await getGithubToken();
-      github.githubAuth(token);
+      github.authenticate(token);
 
       // Create remote repository
-      const url = await repo.createRemoteRepo(repoName, description);
+      const url = await repo.createRemoteRepo('github', repoName, description);
 
       // Create gitignore file
       await repo.createGitIgnoreFromApi();
