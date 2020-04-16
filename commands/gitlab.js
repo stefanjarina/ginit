@@ -7,7 +7,7 @@ const repo = require('../lib/repo');
 
 const getGitlabToken = async () => {
   // Fetch token from config store
-  let { token } = gitlab.getStoredToken();
+  let token = gitlab.getStoredToken();
   if (token) {
     return token;
   }
@@ -45,6 +45,8 @@ module.exports = {
 
       // Set up local repository and push to remote
       await repo.setupRepo(url);
+
+      console.log(chalk.green('All done!'));
     } catch (err) {
       console.log(chalk.red(err));
     }

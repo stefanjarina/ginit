@@ -13,6 +13,7 @@
     "@gitbeaker/node": "^17.0.1",
     "@octokit/auth-basic": "^1.4.2",
     "@octokit/rest": "^17.1.4",
+    "azure-devops-node-api": "^10.1.1",
     "chalk": "^4.0.0",
     "clear": "^0.1.0",
     "clui": "^0.3.6",
