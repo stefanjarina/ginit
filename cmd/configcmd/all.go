@@ -2,28 +2,38 @@ package configcmd
 
 import (
 	"fmt"
+	"os"
+
 	"github.com/spf13/cobra"
+	"github.com/stefanjarina/ginit/config"
+	"github.com/stefanjarina/ginit/console"
+	"gopkg.in/yaml.v2"
 )
 
 var allCmd = &cobra.Command{
 	Use:   "all",
-	Short: "Lists whole configuration",
-	Long:  ``,
+	Short: "Print configuration (whole file, or one provider with --repo)",
 	Run: func(cmd *cobra.Command, args []string) {
 		repo, _ := cmd.InheritedFlags().GetString("repo")
-		fmt.Println("Repo:", repo)
 
+		var (
+			data []byte
+			err  error
+		)
+		if repo == "" {
+			data, err = yaml.Marshal(config.Current)
+		} else {
+			p := config.Current.GetProvider(repo)
+			if p == nil {
+				console.Error(fmt.Sprintf("unknown provider: %s", repo), nil)
+				os.Exit(1)
+			}
+			data, err = yaml.Marshal(p)
+		}
+		if err != nil {
+			console.Error("marshal config", err)
+			os.Exit(1)
+		}
+		fmt.Print(string(data))
 	},
-}
-
-func init() {
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// allCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// allCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }

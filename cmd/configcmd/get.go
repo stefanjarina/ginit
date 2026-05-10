@@ -2,26 +2,17 @@ package configcmd
 
 import (
 	"fmt"
+
 	"github.com/spf13/cobra"
+	"github.com/stefanjarina/ginit/config"
 )
 
 var getCmd = &cobra.Command{
-	Use:   "get",
-	Short: "Gets value of a configuration key",
-	Long:  ``,
+	Use:   "get <key>",
+	Short: "Get value of a configuration key",
+	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("get called")
+		repo, _ := cmd.InheritedFlags().GetString("repo")
+		fmt.Println(config.Current.GetValue(repo, args[0]))
 	},
-}
-
-func init() {
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// getCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// getCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }

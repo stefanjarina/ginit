@@ -6,12 +6,11 @@ import (
 	"slices"
 
 	"github.com/charmbracelet/huh"
-	"github.com/stefanjarina/ginit/api/gitignoreio"
 )
 
 func GetTokenGroup(token *string) *huh.Group {
 	return huh.NewGroup(
-		huh.NewInput().Title("Enter your Personal Access Token").Value(token),
+		huh.NewInput().Title("Enter your Personal Access Token").EchoMode(huh.EchoModePassword).Value(token),
 	)
 }
 
@@ -37,18 +36,34 @@ func GetRepoDetailGroup(repository string, repoName *string, description *string
 		}
 	}
 
-	group := huh.NewGroup(
+	return huh.NewGroup(
 		huh.NewInput().Title("Repository Name").Value(repoName),
 		huh.NewInput().Title("Description").Value(description),
 		huh.NewSelect[string]().Title("Visibility").Options(visibilityChoices...).Value(visibility),
 	)
-
-	return group
 }
 
-func GetGitIgnoreGroup(filesVal *[]string, typesVal *[]string) *huh.Group {
-	defaultFiles := []string{"package.json"}
+// GetGitIgnoreGroup builds the multi-select prompt for the .gitignore command
+// and the init flow. availableTypes is the list returned by gitignore.io.
+//
+// Order matches novugit's AskForGitignoreDetails: gitignore.io templates first,
+// custom files second. The custom-files multiselect is only included when there
+// are files to choose from in the current directory.
+func GetGitIgnoreGroup(availableTypes []string, filesVal *[]string, typesVal *[]string) *huh.Group {
+	defaultFiles := []string{"node_modules"}
 	defaultTypes := []string{"windows", "linux", "macos", "node", "dotnetcore", "visualstudiocode", "webstorm+all"}
+
+	var availableTypesOptions []huh.Option[string]
+	for _, at := range availableTypes {
+		if at == "" {
+			continue
+		}
+		opt := huh.NewOption(at, at)
+		if slices.Contains(defaultTypes, at) {
+			opt = opt.Selected(true)
+		}
+		availableTypesOptions = append(availableTypesOptions, opt)
+	}
 
 	currentDir, err := os.Getwd()
 	if err != nil {
@@ -56,49 +71,94 @@ func GetGitIgnoreGroup(filesVal *[]string, typesVal *[]string) *huh.Group {
 	}
 	files := getListOfFiles(currentDir)
 
-	giClient := gitignoreio.NewClient()
-
-	// Get the list of available types.
-	availableTypes, err := giClient.List()
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	var filesOptions []huh.Option[string]
 	for _, f := range files {
 		if f == "" {
 			continue
 		}
-		var newOption huh.Option[string]
+		opt := huh.NewOption(f, f)
 		if slices.Contains(defaultFiles, f) {
-			newOption = huh.NewOption(f, f).Selected(true)
-		} else {
-			newOption = huh.NewOption(f, f)
+			opt = opt.Selected(true)
 		}
-
-		filesOptions = append(filesOptions, newOption)
+		filesOptions = append(filesOptions, opt)
 	}
 
-	availableTypesOptions := make([]huh.Option[string], len(availableTypes))
-	for _, at := range availableTypes {
-		if at == "" {
-			continue
-		}
-		var newOption huh.Option[string]
-		if slices.Contains(defaultTypes, at) {
-			newOption = huh.NewOption(at, at).Selected(true)
-		} else {
-			newOption = huh.NewOption(at, at)
-		}
-		availableTypesOptions = append(availableTypesOptions, newOption)
+	fields := []huh.Field{
+		huh.NewMultiSelect[string]().
+			Title("Select config names you wish to fetch from https://gitignore.io").
+			Options(availableTypesOptions...).
+			Value(typesVal),
 	}
+	if len(filesOptions) > 0 {
+		fields = append(fields,
+			huh.NewMultiSelect[string]().
+				Title("Select the files and/or folders you wish to ignore").
+				Options(filesOptions...).
+				Value(filesVal),
+		)
+	}
+	return huh.NewGroup(fields...).WithHeight(10)
+}
 
-	group := huh.NewGroup(
-		huh.NewMultiSelect[string]().Title("Files/Folders to add to .gitignore custom section").Options(filesOptions...).Value(filesVal),
-		huh.NewMultiSelect[string]().Title("Select config names you wish to fetch from https://gitignore.io").Options(availableTypesOptions...).Value(typesVal),
-	).WithHeight(10)
+// AskForToken runs a single-input form for a PAT.
+func AskForToken(provider string, accessibility bool) (string, error) {
+	var token string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Enter your "+provider+" Personal Access Token").
+				EchoMode(huh.EchoModePassword).
+				Value(&token),
+		),
+	)
+	if err := form.WithAccessible(accessibility).WithLayout(huh.LayoutStack).Run(); err != nil {
+		return "", err
+	}
+	return token, nil
+}
 
-	return group
+// AskForBaseUrl prompts for a provider's API base URL (used for self-hosted Gitea/Forgejo/GitLab).
+func AskForBaseUrl(provider string, accessibility bool) (string, error) {
+	var url string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().Title("Enter " + provider + " base URL").Value(&url),
+		),
+	)
+	if err := form.WithAccessible(accessibility).WithLayout(huh.LayoutStack).Run(); err != nil {
+		return "", err
+	}
+	return url, nil
+}
+
+// AskToPushToRemote returns whether the user wants to push the initial commit.
+func AskToPushToRemote(accessibility bool) (bool, error) {
+	confirm := true
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().Title("Push to remote now?").Affirmative("Yes").Negative("No").Value(&confirm),
+		),
+	)
+	if err := form.WithAccessible(accessibility).WithLayout(huh.LayoutStack).Run(); err != nil {
+		return false, err
+	}
+	return confirm, nil
+}
+
+// AskToDeleteCurrentLocalRepo asks whether to wipe an existing .git directory.
+func AskToDeleteCurrentLocalRepo(accessibility bool) (bool, error) {
+	confirm := false
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Existing .git directory found. Delete it and start over?").
+				Affirmative("Yes").Negative("No").Value(&confirm),
+		),
+	)
+	if err := form.WithAccessible(accessibility).WithLayout(huh.LayoutStack).Run(); err != nil {
+		return false, err
+	}
+	return confirm, nil
 }
 
 func getListOfFiles(name string) []string {
@@ -108,7 +168,6 @@ func getListOfFiles(name string) []string {
 	}
 	defer file.Close()
 
-	list, _ := file.Readdirnames(0) // 0 to read all files and folders
-
+	list, _ := file.Readdirnames(0)
 	return list
 }
