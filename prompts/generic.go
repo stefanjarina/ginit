@@ -1,9 +1,11 @@
 package prompts
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 )
@@ -15,32 +17,31 @@ func GetTokenGroup(token *string) *huh.Group {
 }
 
 func GetRepoDetailGroup(repository string, repoName *string, description *string, visibility *string) *huh.Group {
-	var visibilityChoices []huh.Option[string]
-
-	switch repository {
-	case "azure":
-		visibilityChoices = []huh.Option[string]{
-			huh.NewOption("Private", "private"),
-			huh.NewOption("Public", "public"),
-		}
-	case "github":
-		visibilityChoices = []huh.Option[string]{
-			huh.NewOption("Private", "private"),
-			huh.NewOption("Public", "public"),
-		}
-	case "gitlab":
-		visibilityChoices = []huh.Option[string]{
-			huh.NewOption("Private", "private"),
-			huh.NewOption("Internal", "internal"),
-			huh.NewOption("Public", "public"),
-		}
+	choices := VisibilityChoices(repository)
+	visibilityChoices := make([]huh.Option[string], 0, len(choices))
+	for _, choice := range choices {
+		visibilityChoices = append(visibilityChoices, huh.NewOption(toTitle(choice), choice))
+	}
+	if *visibility == "" {
+		*visibility = "private"
 	}
 
 	return huh.NewGroup(
-		huh.NewInput().Title("Repository Name").Value(repoName),
+		huh.NewInput().Title("Repository Name").Value(repoName).Validate(required("repository name")),
 		huh.NewInput().Title("Description").Value(description),
 		huh.NewSelect[string]().Title("Visibility").Options(visibilityChoices...).Value(visibility),
 	)
+}
+
+func VisibilityChoices(repository string) []string {
+	switch repository {
+	case "gitlab":
+		return []string{"private", "internal", "public"}
+	case "gitea", "forgejo":
+		return []string{"private", "limited", "public"}
+	default:
+		return []string{"private", "public"}
+	}
 }
 
 // GetGitIgnoreGroup builds the multi-select prompt for the .gitignore command
@@ -106,9 +107,10 @@ func AskForToken(provider string, accessibility bool) (string, error) {
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
-				Title("Enter your "+provider+" Personal Access Token").
+				Title("Enter your " + provider + " Personal Access Token").
 				EchoMode(huh.EchoModePassword).
-				Value(&token),
+				Value(&token).
+				Validate(required(provider + " token")),
 		),
 	)
 	if err := form.WithAccessible(accessibility).WithLayout(huh.LayoutStack).Run(); err != nil {
@@ -122,7 +124,7 @@ func AskForBaseUrl(provider string, accessibility bool) (string, error) {
 	var url string
 	form := huh.NewForm(
 		huh.NewGroup(
-			huh.NewInput().Title("Enter " + provider + " base URL").Value(&url),
+			huh.NewInput().Title("Enter " + provider + " base URL").Value(&url).Validate(required(provider + " base URL")),
 		),
 	)
 	if err := form.WithAccessible(accessibility).WithLayout(huh.LayoutStack).Run(); err != nil {
@@ -145,6 +147,19 @@ func AskToPushToRemote(accessibility bool) (bool, error) {
 	return confirm, nil
 }
 
+func AskToKeepExistingGitignore(accessibility bool) (bool, error) {
+	keep := true
+	confirm := huh.NewForm(huh.NewGroup(
+		huh.NewConfirm().
+			Title("Existing .gitignore found. Use it as-is?").
+			Affirmative("Yes").Negative("No").Value(&keep),
+	))
+	if err := confirm.WithAccessible(accessibility).WithLayout(huh.LayoutStack).Run(); err != nil {
+		return false, err
+	}
+	return keep, nil
+}
+
 // AskToDeleteCurrentLocalRepo asks whether to wipe an existing .git directory.
 func AskToDeleteCurrentLocalRepo(accessibility bool) (bool, error) {
 	confirm := false
@@ -159,6 +174,22 @@ func AskToDeleteCurrentLocalRepo(accessibility bool) (bool, error) {
 		return false, err
 	}
 	return confirm, nil
+}
+
+func required(label string) func(string) error {
+	return func(value string) error {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("%s is required", label)
+		}
+		return nil
+	}
+}
+
+func toTitle(value string) string {
+	if value == "" {
+		return ""
+	}
+	return strings.ToUpper(value[:1]) + value[1:]
 }
 
 func getListOfFiles(name string) []string {

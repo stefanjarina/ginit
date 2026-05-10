@@ -1,0 +1,70 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/stefanjarina/ginit/globals"
+)
+
+func TestCreateDefaultIncludesAllProviders(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ginit.yaml")
+	if err := CreateDefault(path, globals.SupportedRepos); err != nil {
+		t.Fatalf("CreateDefault() error = %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	want := map[string]string{
+		"azure":     "https://dev.azure.com",
+		"bitbucket": "https://api.bitbucket.org/2.0",
+		"forgejo":   "https://codeberg.org",
+		"gitea":     "https://gitea.com",
+		"github":    "https://github.com",
+		"gitlab":    "https://gitlab.com",
+	}
+	if len(cfg.Providers) != len(want) {
+		t.Fatalf("provider count = %d, want %d", len(cfg.Providers), len(want))
+	}
+	for provider, baseURL := range want {
+		if got := cfg.GetValue(provider, "baseurl"); got != baseURL {
+			t.Errorf("%s baseurl = %q, want %q", provider, got, baseURL)
+		}
+	}
+}
+
+func TestSetRemoveSaveLowercaseYAML(t *testing.T) {
+	cfg := &Config{DefaultBranch: "main", Providers: []Provider{{Name: "github", Options: map[string]string{}}}}
+	if err := cfg.SetValue("github", "token", "secret"); err != nil {
+		t.Fatalf("SetValue(token) error = %v", err)
+	}
+	if err := cfg.SetValue("github", "OrgName", "example"); err != nil {
+		t.Fatalf("SetValue(option) error = %v", err)
+	}
+	if err := cfg.RemoveValue("github", "token"); err != nil {
+		t.Fatalf("RemoveValue(token) error = %v", err)
+	}
+
+	path := filepath.Join(t.TempDir(), "ginit.yaml")
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	got := string(data)
+	for _, key := range []string{"defaultbranch:", "providers:", "baseurl:", "options:"} {
+		if !strings.Contains(got, key) {
+			t.Errorf("saved YAML missing lowercase key %q:\n%s", key, got)
+		}
+	}
+	if strings.Contains(got, "DefaultBranch") || strings.Contains(got, "BaseUrl") {
+		t.Errorf("saved YAML contains Go field names:\n%s", got)
+	}
+}

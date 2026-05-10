@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"net/url"
 	"runtime"
 	"strings"
 
@@ -23,11 +24,23 @@ type AdoClient struct {
 	ctx            context.Context
 }
 
-func NewAdoClient(token string, orgUrl string) *AdoClient {
-	if !strings.HasPrefix(orgUrl, "https://") {
-		orgUrl = "https://dev.azure.com/" + orgUrl
+func NewAdoClient(token, baseUrl, orgName string) *AdoClient {
+	return &AdoClient{url: BuildAdoOrgURL(baseUrl, orgName), token: token}
+}
+
+func BuildAdoOrgURL(baseUrl, orgName string) string {
+	if baseUrl == "" {
+		baseUrl = "https://dev.azure.com"
 	}
-	return &AdoClient{url: orgUrl, token: token}
+	baseUrl = strings.TrimRight(baseUrl, "/")
+	if parsed, err := url.Parse(baseUrl); err == nil && parsed.Scheme == "" {
+		baseUrl = "https://" + baseUrl
+	}
+	orgName = strings.Trim(orgName, "/")
+	if orgName == "" {
+		return baseUrl
+	}
+	return baseUrl + "/" + orgName
 }
 
 func (ac *AdoClient) Connect() error {

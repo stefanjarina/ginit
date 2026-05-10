@@ -33,13 +33,8 @@ func AskForProjectInfo(provider string, availableTypes []string, accessibility b
 
 	// If .gitignore already exists, offer to keep it as-is — matches novugit.
 	if _, statErr := os.Stat(filepath.Join(cwd, ".gitignore")); statErr == nil {
-		keep := true
-		confirm := huh.NewForm(huh.NewGroup(
-			huh.NewConfirm().
-				Title("Existing .gitignore found. Use it as-is?").
-				Affirmative("Yes").Negative("No").Value(&keep),
-		))
-		if err := confirm.WithAccessible(accessibility).WithLayout(huh.LayoutStack).Run(); err != nil {
+		keep, err := AskToKeepExistingGitignore(accessibility)
+		if err != nil {
 			return nil, err
 		}
 		if keep {

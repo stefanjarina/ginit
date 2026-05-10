@@ -20,9 +20,11 @@ var (
 	noColor       bool
 )
 
+var GitTag string = "0.0.1"
+
 var rootCmd = &cobra.Command{
 	Use:     "ginit",
-	Version: "0.0.1",
+	Version: GitTag,
 	Short:   "Custom GIT repository initializer",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		console.Verbose = verbose
@@ -37,6 +39,11 @@ func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+// GetRootCommand returns the root command for documentation generation
+func GetRootCommand() *cobra.Command {
+	return rootCmd
 }
 
 func addSubCommands() {

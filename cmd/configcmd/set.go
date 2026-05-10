@@ -11,12 +11,11 @@ import (
 var setEncrypt bool
 
 var setCmd = &cobra.Command{
-	Use:   "set <key> <value>",
+	Use:   "set <provider> <key> <value>",
 	Short: "Set a configuration key to a value",
-	Args:  cobra.ExactArgs(2),
+	Args:  cobra.ExactArgs(3),
 	Run: func(cmd *cobra.Command, args []string) {
-		repo, _ := cmd.InheritedFlags().GetString("repo")
-		key, value := args[0], args[1]
+		repo, key, value := args[0], args[1], args[2]
 
 		if setEncrypt {
 			console.Warning("--encrypt is currently a no-op (token storage is plaintext); value will be stored as-is.")

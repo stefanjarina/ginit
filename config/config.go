@@ -18,9 +18,12 @@ type Config struct {
 // providerDefaults seeds known providers with sensible BaseUrls.
 // Mirrors novugit's Configuration.CreateEmptyConfig.
 var providerDefaults = map[string]string{
-	"azure":  "https://dev.azure.com",
-	"github": "https://github.com",
-	"gitlab": "https://gitlab.com",
+	"azure":     "https://dev.azure.com",
+	"bitbucket": "https://api.bitbucket.org/2.0",
+	"forgejo":   "https://codeberg.org",
+	"gitea":     "https://gitea.com",
+	"github":    "https://github.com",
+	"gitlab":    "https://gitlab.com",
 }
 
 // Module-level state set once by Load/CreateDefault. Commands read from here

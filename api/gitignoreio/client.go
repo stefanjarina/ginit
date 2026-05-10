@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -28,8 +29,15 @@ func NewClient() *GitignoreIo {
 	client := &http.Client{
 		Timeout: 5 * time.Second,
 	}
+	return NewClientWithBaseURL("https://www.toptal.com/developers/gitignore/api", client)
+}
+
+func NewClientWithBaseURL(baseUrl string, client *http.Client) *GitignoreIo {
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second}
+	}
 	return &GitignoreIo{
-		baseUrl:    "https://www.toptal.com/developers/gitignore/api",
+		baseUrl:    strings.TrimRight(baseUrl, "/"),
 		httpClient: client,
 	}
 }
@@ -73,7 +81,7 @@ func (c *GitignoreIo) FetchAll() (resp map[string]GitignoreConfig, err error) {
 }
 
 func (c *GitignoreIo) FetchConfig(names []string) (resp string, err error) {
-	endpoint := c.baseUrl + strings.Join(names, ",")
+	endpoint := c.baseUrl + "/" + strings.Join(names, ",")
 	res, err := c.do(http.MethodGet, endpoint, nil)
 	if err != nil {
 		return "", err
@@ -99,7 +107,16 @@ func (c *GitignoreIo) do(method, endpoint string, params map[string]string) (*ht
 		q.Set(key, val)
 	}
 	req.URL.RawQuery = q.Encode()
-	return c.httpClient.Do(req)
+	res, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		defer res.Body.Close()
+		body, _ := io.ReadAll(res.Body)
+		return nil, fmt.Errorf("gitignore.io %s %s: %d %s", method, endpoint, res.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return res, nil
 }
 
 func parseIgnoreList(buf io.Reader) []string {

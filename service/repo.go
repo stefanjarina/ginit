@@ -50,6 +50,10 @@ func (r *RepoService) CreateRemoteRepo(provider string) (*ProjectInfo, error) {
 		return r.handleAzure()
 	case "gitlab":
 		return r.handleGitlab()
+	case "bitbucket":
+		return r.handleBitbucket()
+	case "gitea", "forgejo":
+		return r.handleGiteaCompatible(provider)
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", provider)
 	}
@@ -206,13 +210,14 @@ func (r *RepoService) handleAzure() (*ProjectInfo, error) {
 
 	token := r.Cfg.GetValue("azure", "token")
 	org := r.Cfg.GetValue("azure", "OrgName")
+	baseUrl := r.Cfg.GetValue("azure", "baseurl")
 
 	availableTypes, err := r.fetchGitignoreList()
 	if err != nil {
 		return nil, err
 	}
 
-	client := api.NewAdoClient(token, org)
+	client := api.NewAdoClient(token, baseUrl, org)
 	if err := console.Run("Authenticating to Azure DevOps", client.Connect); err != nil {
 		return nil, gerrors.NewProvider("azure", "authenticate", err)
 	}
@@ -294,6 +299,125 @@ func (r *RepoService) handleGitlab() (*ProjectInfo, error) {
 		return nil, err
 	}
 	pi.RemoteUrl = url
+	return pi, nil
+}
+
+func (r *RepoService) handleBitbucket() (*ProjectInfo, error) {
+	if err := r.ensureBaseUrlAndToken("bitbucket"); err != nil {
+		return nil, err
+	}
+	if r.Cfg.GetValue("bitbucket", "User") == "" {
+		user, err := prompts.AskForBitbucketUser(r.Accessibility)
+		if err != nil {
+			return nil, err
+		}
+		_ = r.Cfg.SetValue("bitbucket", "User", user)
+		if err := config.Save(r.CfgPath, r.Cfg); err != nil {
+			return nil, err
+		}
+	}
+
+	user := r.Cfg.GetValue("bitbucket", "User")
+	token := r.Cfg.GetValue("bitbucket", "token")
+	baseUrl := r.Cfg.GetValue("bitbucket", "baseurl")
+
+	availableTypes, err := r.fetchGitignoreList()
+	if err != nil {
+		return nil, err
+	}
+
+	client := api.NewBitbucketClient(user, token, baseUrl)
+	var workspaces []api.BitbucketWorkspace
+	if err := console.Run("Authenticating and fetching Bitbucket workspaces", func() error {
+		if e := client.Connect(); e != nil {
+			return e
+		}
+		ws, e := client.GetWorkspaces()
+		workspaces = ws
+		return e
+	}); err != nil {
+		return nil, gerrors.NewProvider("bitbucket", "authenticate / list workspaces", err)
+	}
+
+	workspace, err := prompts.AskForBitbucketWorkspace(workspaces, r.Accessibility)
+	if err != nil {
+		return nil, err
+	}
+
+	var projects []api.BitbucketProject
+	if err := console.Run("Fetching Bitbucket projects", func() error {
+		ps, e := client.GetProjects(workspace)
+		projects = ps
+		return e
+	}); err != nil {
+		return nil, gerrors.NewProvider("bitbucket", "list projects", err)
+	}
+	project, err := prompts.AskForBitbucketProject(projects, r.Accessibility)
+	if err != nil {
+		return nil, err
+	}
+
+	pi, err := prompts.AskForProjectInfo("bitbucket", availableTypes, r.Accessibility)
+	if err != nil {
+		return nil, err
+	}
+
+	var remoteUrl string
+	if err := console.Run("Creating repo on Bitbucket", func() error {
+		u, e := client.CreateRepository(workspace, project, pi.Name, pi.Description, pi.Visibility)
+		remoteUrl = u
+		return e
+	}); err != nil {
+		return nil, err
+	}
+	pi.RemoteUrl = remoteUrl
+	return pi, nil
+}
+
+func (r *RepoService) handleGiteaCompatible(provider string) (*ProjectInfo, error) {
+	if err := r.ensureBaseUrlAndToken(provider); err != nil {
+		return nil, err
+	}
+	token := r.Cfg.GetValue(provider, "token")
+	baseUrl := r.Cfg.GetValue(provider, "baseurl")
+
+	availableTypes, err := r.fetchGitignoreList()
+	if err != nil {
+		return nil, err
+	}
+
+	client := api.NewGiteaClient(provider, token, baseUrl)
+	var owners []api.GiteaOwner
+	if err := console.Run("Authenticating and fetching "+provider+" organizations", func() error {
+		if e := client.Connect(); e != nil {
+			return e
+		}
+		fetchedOwners, e := client.GetOwners()
+		owners = fetchedOwners
+		return e
+	}); err != nil {
+		return nil, gerrors.NewProvider(provider, "authenticate / list organizations", err)
+	}
+
+	owner, err := prompts.AskForGiteaOwner(provider, owners, r.Accessibility)
+	if err != nil {
+		return nil, err
+	}
+
+	pi, err := prompts.AskForProjectInfo(provider, availableTypes, r.Accessibility)
+	if err != nil {
+		return nil, err
+	}
+
+	var remoteUrl string
+	if err := console.Run("Creating repo on "+provider, func() error {
+		u, e := client.CreateRepository(owner, pi.Name, pi.Description, pi.Visibility)
+		remoteUrl = u
+		return e
+	}); err != nil {
+		return nil, err
+	}
+	pi.RemoteUrl = remoteUrl
 	return pi, nil
 }
 

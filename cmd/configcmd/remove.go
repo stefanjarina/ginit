@@ -9,12 +9,11 @@ import (
 )
 
 var removeCmd = &cobra.Command{
-	Use:   "remove <key>",
+	Use:   "remove <provider> <key>",
 	Short: "Remove a configuration key",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
-		repo, _ := cmd.InheritedFlags().GetString("repo")
-		if err := config.Current.RemoveValue(repo, args[0]); err != nil {
+		if err := config.Current.RemoveValue(args[0], args[1]); err != nil {
 			console.Error("remove value", err)
 			os.Exit(1)
 		}

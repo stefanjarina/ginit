@@ -2,6 +2,12 @@
 
 version: '3'
 
+vars:
+  APP_NAME:
+    sh: '{{ if eq OS "windows" }}echo ginit.exe{{ else }}echo ginit{{ end }}'
+  PUBLISH_DIR: publish
+  DOCS_DIR: docs
+
 tasks:
   default:
     cmds:
@@ -9,25 +15,100 @@ tasks:
     silent: true
 
   build:
-    desc: Build the project
+    desc: Build application
     cmds:
-      - task: build_linux
-      - task: build_windows
+      - echo "Building {{.APP_NAME}}..."
+      - go build -o {{.PUBLISH_DIR}}/{{.APP_NAME}} main.go
 
-  build_linux:
-    desc: Build the project for Linux
+  runb:
+    desc: Build and run application
     cmds:
-      - echo "Building the project for Linux..."
-      - go build -o bin/ginit ./main.go
-    vars:
-      GOOS: linux
-      GOARCH: amd64
+      - task: build
+      - task: run
 
-  build_windows:
-    desc: Build the project for Windows
+  run:
+    desc: Run application
     cmds:
-      - echo "Building the project for Windows..."
-      - go build -o bin/ginit.exe ./main.go
-    vars:
-      GOOS: windows
-      GOARCH: amd64
+      - echo "Running {{.APP_NAME}}..."
+      - "{{.PUBLISH_DIR}}/{{.APP_NAME}} {{.CLI_ARGS}}"
+
+  build-all:
+    desc: Build for all platforms
+    cmds:
+      - echo "Building for 'windows/amd64'..."
+      - task: build-platform
+        vars:
+          GOOS: windows
+          GOARCH: amd64
+          OUTPUT: "{{.PUBLISH_DIR}}/{{.APP_NAME}}-windows-x64.exe"
+      - echo "Building for 'windows/arm64'..."
+      - task: build-platform
+        vars:
+          GOOS: windows
+          GOARCH: arm64
+          OUTPUT: "{{.PUBLISH_DIR}}/{{.APP_NAME}}-windows-arm64.exe"
+      - echo "Building for 'linux/amd64'..."
+      - task: build-platform
+        vars:
+          GOOS: linux
+          GOARCH: amd64
+          OUTPUT: "{{.PUBLISH_DIR}}/{{.APP_NAME}}-linux-x64"
+      - echo "Building for 'linux/arm64'..."
+      - task: build-platform
+        vars:
+          GOOS: linux
+          GOARCH: arm64
+          OUTPUT: "{{.PUBLISH_DIR}}/{{.APP_NAME}}-linux-arm64"
+      - echo "Building for 'darwin/amd64'..."
+      - task: build-platform
+        vars:
+          GOOS: darwin
+          GOARCH: amd64
+          OUTPUT: "{{.PUBLISH_DIR}}/{{.APP_NAME}}-darwin-x64"
+      - echo "Building for 'darwin/arm64'..."
+      - task: build-platform
+        vars:
+          GOOS: darwin
+          GOARCH: arm64
+          OUTPUT: "{{.PUBLISH_DIR}}/{{.APP_NAME}}-darwin-arm64"
+
+  build-platform:
+    internal: true
+    cmds:
+      - go build -ldflags "-s -w -X github.com/stefanjarina/{{.APP_NAME}}/cmd.GitTag=$GITHUB_REF_NAME" -o {{.OUTPUT}} main.go
+    env:
+      GOOS: "{{.GOOS}}"
+      GOARCH: "{{.GOARCH}}"
+
+  test:
+    desc: Test the application
+    cmds:
+      - echo "Testing..."
+      - go test -v -coverprofile=coverage.out ./...
+
+  cover:
+    desc: Generate test coverage report
+    cmds:
+      - go test -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+      - echo "Open coverage.html in browser"
+
+  clean:
+    desc: Clean the artifacts
+    cmds:
+      - echo "Cleaning..."
+      - rm -rf {{.PUBLISH_DIR}}
+      - rm -rf {{.DOCS_DIR}}
+      - rm -f coverage.out
+      - rm -f coverage.html
+      - go clean
+
+  increment:
+    desc: Creates new git tag with incremented version
+    cmds:
+      - go run bin/increment_version/main.go {{.CLI_ARGS}}
+
+  docs:
+    desc: Generate documentation
+    cmds:
+      - go run bin/gendocs/main.go {{.CLI_ARGS}}

@@ -2,6 +2,7 @@ package gitignorecmd
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
@@ -16,6 +17,21 @@ var GitignoreCmd = &cobra.Command{
 	Short: "Generate .gitignore from gitignore.io templates and custom files",
 	Run: func(cmd *cobra.Command, args []string) {
 		accessible, _ := cmd.Root().PersistentFlags().GetBool("accessibility")
+		cwd, err := os.Getwd()
+		if err != nil {
+			console.Error("get working directory", err)
+			os.Exit(1)
+		}
+		if _, statErr := os.Stat(filepath.Join(cwd, ".gitignore")); statErr == nil {
+			keep, err := prompts.AskToKeepExistingGitignore(accessible)
+			if err != nil {
+				console.Error("prompt", err)
+				os.Exit(1)
+			}
+			if keep {
+				return
+			}
+		}
 
 		client := gitignoreio.NewClient()
 		var availableTypes []string
@@ -42,10 +58,6 @@ var GitignoreCmd = &cobra.Command{
 					return err
 				}
 				ioContent = c
-			}
-			cwd, err := os.Getwd()
-			if err != nil {
-				return err
 			}
 			return gitops.WriteGitignore(cwd, customFiles, ioContent)
 		}); err != nil {

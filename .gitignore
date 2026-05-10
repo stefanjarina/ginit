@@ -1,14 +1,11 @@
 # CUSTOM SETTINGS
 
-.fleet
+.claude/settings.local.json
+.codex/
+
 # GITIGNORE.IO: 
 # Created by https://www.toptal.com/developers/gitignore/api/dotnetcore,go,goland+all,linux,macos,node,visualstudiocode,webstorm+all,windows
 # Edit at https://www.toptal.com/developers/gitignore?templates=dotnetcore,go,goland+all,linux,macos,node,visualstudiocode,webstorm+all,windows
-
-### DotnetCore ###
-# .NET Core build folders
-bin/
-obj/
 
 # Common node modules locations
 /node_modules
@@ -147,7 +144,8 @@ fabric.properties
 .LSOverride
 
 # Icon must end with two \r
-Icon
+Icon
+
 
 # Thumbnails
 ._*

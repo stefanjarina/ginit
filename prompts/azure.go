@@ -10,7 +10,8 @@ func AskForAzureOrgName(accessibility bool) (string, error) {
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Azure DevOps organization name (https://dev.azure.com/<this>)").
-				Value(&org),
+				Value(&org).
+				Validate(required("Azure DevOps organization name")),
 		),
 	)
 	if err := form.WithAccessible(accessibility).WithLayout(huh.LayoutStack).Run(); err != nil {

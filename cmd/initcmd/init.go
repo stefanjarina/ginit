@@ -20,6 +20,9 @@ func addSubcommands() {
 	InitCmd.AddCommand(githubCmd)
 	InitCmd.AddCommand(azureCmd)
 	InitCmd.AddCommand(gitlabCmd)
+	InitCmd.AddCommand(bitbucketCmd)
+	InitCmd.AddCommand(giteaCmd)
+	InitCmd.AddCommand(forgejoCmd)
 }
 
 func init() {
