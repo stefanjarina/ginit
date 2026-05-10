@@ -1,17 +1,18 @@
 package prompts
 
-import "github.com/AlecAivazis/survey/v2"
+import (
+	"github.com/charmbracelet/huh"
+)
 
-func AskWhichGitlabGroup() []*survey.Question {
+func AskGitlabAuthenticationMethodGroup(authentication *string) *huh.Group {
 	// TODO: get list of available groups from API
 
-	return []*survey.Question{
-		{
-			Name: "authenticationMethod",
-			Prompt: &survey.Select{
-				Message: "Authentication method:",
-				Options: []string{"Personal Access Token", "Username & Password"},
-			},
-		},
+	authenticationChoices := []huh.Option[string]{
+		huh.NewOption("Personal Access Token", "token"),
+		huh.NewOption("Username & Password", "username_password"),
 	}
+
+	return huh.NewGroup(
+		huh.NewSelect[string]().Title("Authentication method").Options(authenticationChoices...).Value(authentication),
+	)
 }

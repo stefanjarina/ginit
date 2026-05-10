@@ -35,7 +35,7 @@ ginit init github --repo-name myrepo --description "This is my awesome repo"
 ## TODO
 
 - Implement repositories
-  - [ ] Gitlab (no good sdk for .net, will need to write own implementation)
+  - [ ] Gitlab
   - [ ] BitBucket (optional as I am not using it)
   - [ ] Azure Devops
 - [ ] Add other config files with sane defaults

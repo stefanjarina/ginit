@@ -1,80 +1,55 @@
 package prompts
 
 import (
-	"github.com/AlecAivazis/survey/v2"
-	"github.com/stefanjarina/ginit/api/gitignoreio"
 	"log"
 	"os"
-	"path/filepath"
+	"slices"
+
+	"github.com/charmbracelet/huh"
+	"github.com/stefanjarina/ginit/api/gitignoreio"
 )
 
-func AskForToken() []*survey.Question {
-	var questions = []*survey.Question{
-		{
-			Name:     "token",
-			Prompt:   &survey.Input{Message: "Enter your Personal Access Token"},
-			Validate: survey.Required,
-		},
-	}
-
-	return questions
+func GetTokenGroup(token *string) *huh.Group {
+	return huh.NewGroup(
+		huh.NewInput().Title("Enter your Personal Access Token").Value(token),
+	)
 }
 
-func GetTwoFactorAuthenticationCode() []*survey.Question {
-	var questions = []*survey.Question{
-		{
-			Name:     "twoFactorAuthenticationCode",
-			Prompt:   &survey.Input{Message: "Enter your two-factor authentication code:"},
-			Validate: survey.Required,
-		},
-	}
-
-	return questions
-}
-
-func GetRepoDetailQuestions(repository string, repoName string, description string) []*survey.Question {
-	var visibilityChoices []string
+func GetRepoDetailGroup(repository string, repoName *string, description *string, visibility *string) *huh.Group {
+	var visibilityChoices []huh.Option[string]
 
 	switch repository {
 	case "azure":
-		visibilityChoices = []string{"private", "public"}
+		visibilityChoices = []huh.Option[string]{
+			huh.NewOption("Private", "private"),
+			huh.NewOption("Public", "public"),
+		}
 	case "github":
-		visibilityChoices = []string{"private", "public"}
+		visibilityChoices = []huh.Option[string]{
+			huh.NewOption("Private", "private"),
+			huh.NewOption("Public", "public"),
+		}
 	case "gitlab":
-		visibilityChoices = []string{"private", "internal", "public"}
+		visibilityChoices = []huh.Option[string]{
+			huh.NewOption("Private", "private"),
+			huh.NewOption("Internal", "internal"),
+			huh.NewOption("Public", "public"),
+		}
 	}
 
-	if repoName == "" {
-		wd, _ := os.Getwd()
-		repoName = filepath.Base(wd)
-	}
+	group := huh.NewGroup(
+		huh.NewInput().Title("Repository Name").Value(repoName),
+		huh.NewInput().Title("Description").Value(description),
+		huh.NewSelect[string]().Title("Visibility").Options(visibilityChoices...).Value(visibility),
+	)
 
-	var questions = []*survey.Question{
-		{
-			Name:      "name",
-			Prompt:    &survey.Input{Message: "Enter a name for the repository", Default: repoName},
-			Validate:  survey.Required,
-			Transform: survey.ToLower,
-		},
-		{
-			Name:      "description",
-			Prompt:    &survey.Input{Message: "Optionally enter a description of the repository", Default: description},
-			Transform: survey.ToLower,
-		},
-		{
-			Name: "visibility",
-			Prompt: &survey.Select{
-				Message: "Visibility of a repository",
-				Options: visibilityChoices,
-				Default: "public",
-			},
-		},
-	}
-
-	return questions
+	return group
 }
 
-func GetGitIgnoreQuestions() []*survey.Question {
+func GetGitIgnoreGroup(filesVal *[]string, typesVal *[]string) *huh.Group {
+	defaultFiles := []string{"package.json"}
+	defaultTypes := []string{"windows", "linux", "macos", "node", "dotnetcore", "visualstudiocode", "webstorm+all"}
+
 	currentDir, err := os.Getwd()
 	if err != nil {
 		log.Fatal(err)
@@ -89,26 +64,41 @@ func GetGitIgnoreQuestions() []*survey.Question {
 		log.Fatal(err)
 	}
 
-	var questions = []*survey.Question{
-		{
-			Name: "localFiles",
-			Prompt: &survey.MultiSelect{
-				Message: "Visibility of a repository",
-				Options: files,
-				Default: []string{"package.json"},
-			},
-		},
-		{
-			Name: "gitignore",
-			Prompt: &survey.MultiSelect{
-				Message: "Select config names you wish to fetch from https://gitignore.io",
-				Options: availableTypes,
-				Default: []string{"windows", "linux", "macos", "node", "dotnetcore", "visualstudiocode", "webstorm+all"},
-			},
-		},
+	var filesOptions []huh.Option[string]
+	for _, f := range files {
+		if f == "" {
+			continue
+		}
+		var newOption huh.Option[string]
+		if slices.Contains(defaultFiles, f) {
+			newOption = huh.NewOption(f, f).Selected(true)
+		} else {
+			newOption = huh.NewOption(f, f)
+		}
+
+		filesOptions = append(filesOptions, newOption)
 	}
 
-	return questions
+	availableTypesOptions := make([]huh.Option[string], len(availableTypes))
+	for _, at := range availableTypes {
+		if at == "" {
+			continue
+		}
+		var newOption huh.Option[string]
+		if slices.Contains(defaultTypes, at) {
+			newOption = huh.NewOption(at, at).Selected(true)
+		} else {
+			newOption = huh.NewOption(at, at)
+		}
+		availableTypesOptions = append(availableTypesOptions, newOption)
+	}
+
+	group := huh.NewGroup(
+		huh.NewMultiSelect[string]().Title("Files/Folders to add to .gitignore custom section").Options(filesOptions...).Value(filesVal),
+		huh.NewMultiSelect[string]().Title("Select config names you wish to fetch from https://gitignore.io").Options(availableTypesOptions...).Value(typesVal),
+	).WithHeight(10)
+
+	return group
 }
 
 func getListOfFiles(name string) []string {

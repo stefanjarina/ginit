@@ -1,31 +1,24 @@
 package prompts
 
-import "github.com/AlecAivazis/survey/v2"
+import (
+	"github.com/charmbracelet/huh"
+)
 
-func AskWhichAzureProject() []*survey.Question {
-	// TODO: get list of available projects from API
+func AskAzureAuthenticationMethodGroup(authentication *string) *huh.Group {
+	// TODO: get list of available groups from API
 
-	return []*survey.Question{
-		{
-			Name: "authenticationMethod",
-			Prompt: &survey.Select{
-				Message: "Authentication method:",
-				Options: []string{"Personal Access Token", "Username & Password"},
-			},
-		},
+	authenticationChoices := []huh.Option[string]{
+		huh.NewOption("Personal Access Token", "token"),
+		huh.NewOption("Username & Password", "username_password"),
 	}
+
+	return huh.NewGroup(
+		huh.NewSelect[string]().Title("Authentication method").Options(authenticationChoices...).Value(authentication),
+	)
 }
 
-func AskForAzureAuth() []*survey.Question {
-	var questions = []*survey.Question{
-		{
-			Name:     "orgName",
-			Prompt:   &survey.Input{Message: "Enter your organization name (https://dev.azure.com/{yourorgname})"},
-			Validate: survey.Required,
-		},
-	}
-
-	questions = append(questions, AskForToken()...)
-
-	return questions
+func AskForAzureOrganizationUrlGroup(orgName *string) *huh.Group {
+	return huh.NewGroup(
+		huh.NewInput().Title("Enter your organization name (https://dev.azure.com/{yourorgname})").Value(orgName),
+	)
 }

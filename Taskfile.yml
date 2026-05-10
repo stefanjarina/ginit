@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: '3'
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  build:
+    desc: Build the project
+    cmds:
+      - task: build_linux
+      - task: build_windows
+
+  build_linux:
+    desc: Build the project for Linux
+    cmds:
+      - echo "Building the project for Linux..."
+      - go build -o bin/ginit ./main.go
+    vars:
+      GOOS: linux
+      GOARCH: amd64
+
+  build_windows:
+    desc: Build the project for Windows
+    cmds:
+      - echo "Building the project for Windows..."
+      - go build -o bin/ginit.exe ./main.go
+    vars:
+      GOOS: windows
+      GOARCH: amd64

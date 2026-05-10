@@ -12,6 +12,7 @@ var allCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		repo, _ := cmd.InheritedFlags().GetString("repo")
 		fmt.Println("Repo:", repo)
+
 	},
 }
 

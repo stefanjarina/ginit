@@ -2,45 +2,92 @@ package api
 
 import (
 	"fmt"
-	"github.com/AlecAivazis/survey/v2"
-	"github.com/briandowns/spinner"
+	"os"
+	"path/filepath"
+
+	"github.com/charmbracelet/huh"
+	"github.com/spf13/viper"
 	"github.com/stefanjarina/ginit/prompts"
-	"time"
 )
 
-func GetAnswers(repo string) {
-	s := spinner.New(spinner.CharSets[9], 100*time.Millisecond)
+func GetAnswers(repo string, token string) (error, string, string, string, string, []string, []string) {
+	accessibility := viper.GetBool("accessibility")
 
-	answers := struct {
-		Name                 string
-		Description          string
-		Visibility           string
-		LocalFiles           []string
-		Gitignore            []string
-		AuthenticationMethod string
-	}{}
+	var (
+		name        string
+		localFiles  []string
+		description string
+		visibility  string
+		gitignore   []string
+		orgUrl      string
+		err         error
+	)
 
-	// prepare questions
-	s.Start()
-	repoDetailQuestions := prompts.GetRepoDetailQuestions(repo, "", "")
-	gitIgnoreQuestions := prompts.GetGitIgnoreQuestions()
-	questions := append(repoDetailQuestions, gitIgnoreQuestions...)
-	s.Stop()
+	wd, _ := os.Getwd()
+	name = filepath.Base(wd)
 
-	//execute base questions
-	err := survey.Ask(questions, &answers)
-	if err != nil {
-		fmt.Println(err.Error())
-		return
+	if token == "" {
+		tokenForm := huh.NewForm(
+			prompts.GetTokenGroup(&token),
+		)
+		err = tokenForm.WithAccessible(accessibility).WithLayout(huh.LayoutStack).Run()
+		if err != nil || token == "" {
+			return err, "", "", "", "", nil, nil
+		}
 	}
 
-	fmt.Println("Name:", answers.Name)
-	fmt.Println("Description:", answers.Description)
-	fmt.Println("Visibility:", answers.Visibility)
-	fmt.Printf("LocalFiles: %v\n", answers.LocalFiles)
-	fmt.Printf("Gitignore: %v\n", answers.Gitignore)
+	if repo == "azure" {
+		orgUrl, err = GetGithubSpecificAnswers(orgUrl, accessibility)
+		if err != nil {
+			return err, "", "", "", "", nil, nil
+		}
+	}
 
-	survey.Ask(prompts.AskGithubAuthenticationMethod(), &answers, survey.WithPageSize(10))
+	var providerService RepoService
+	if token != "" {
+		switch repo {
+		case "azure":
+			providerService = NewAdoClient(token, orgUrl)
+		case "github":
+			providerService = NewGithubClient(token)
+		default:
+			return fmt.Errorf("unsupported repository type: %s", repo), "", "", "", "", nil, nil
+		}
+		err = providerService.Connect()
+		if err != nil {
+			return err, "", "", "", "", nil, nil
+		}
+	}
 
-	fmt.Println("authenticationMethod:", answers.AuthenticationMethod)
+	form1 := huh.NewForm(
+		prompts.GetRepoDetailGroup(repo, &name, &description, &visibility),
+	)
+
+	form2 := huh.NewForm(
+		prompts.GetGitIgnoreGroup(&localFiles, &gitignore),
+	)
+
+	err = form1.WithAccessible(accessibility).WithLayout(huh.LayoutStack).Run()
+	if err != nil {
+		fmt.Println(err.Error())
+		return err, "", "", "", "", nil, nil
+	}
+	err = form2.WithAccessible(accessibility).WithLayout(huh.LayoutStack).Run()
+	if err != nil {
+		fmt.Println(err.Error())
+		return err, "", "", "", "", nil, nil
+	}
+
+	return nil, token, name, description, visibility, localFiles, gitignore
+}
+
+func GetGithubSpecificAnswers(orgUrl string, accessibility bool) (string, error) {
+	adoSpecificForm := huh.NewForm(
+		prompts.AskForAzureOrganizationUrlGroup(&orgUrl),
+	)
+	err := adoSpecificForm.WithAccessible(accessibility).WithLayout(huh.LayoutStack).Run()
+	if err != nil {
+		return "", err
+	}
+	return orgUrl, nil
 }

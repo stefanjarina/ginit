@@ -1,8 +1,13 @@
 package initcmd
 
 import (
+	"fmt"
+	"log"
+
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"github.com/stefanjarina/ginit/api"
+	c "github.com/stefanjarina/ginit/config"
 )
 
 var azureCmd = &cobra.Command{
@@ -10,7 +15,29 @@ var azureCmd = &cobra.Command{
 	Short: "Initialize repo for Azure DevOps",
 	Long:  ``,
 	Run: func(cmd *cobra.Command, args []string) {
-		api.GetAnswers("azure")
+		var config c.Config
+		err := viper.Unmarshal(&config)
+		if err != nil {
+			log.Fatalf("unable to decode config file, %v", err)
+		}
+
+		var token string
+		for _, provider := range config.Providers {
+			if provider.Name == "azure" {
+				token = provider.Token
+			}
+		}
+
+		err, token, name, description, visibility, localFiles, gitignore := api.GetAnswers("azure", token)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		fmt.Printf("Name: %s\n", name)
+		fmt.Printf("Name: %s\n", description)
+		fmt.Printf("Name: %s\n", visibility)
+		fmt.Printf("Name: %v\n", localFiles)
+		fmt.Printf("Name: %v\n", gitignore)
 	},
 }
 

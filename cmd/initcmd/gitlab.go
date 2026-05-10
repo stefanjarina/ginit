@@ -1,8 +1,8 @@
 package initcmd
 
 import (
-	"fmt"
 	"github.com/spf13/cobra"
+	"github.com/stefanjarina/ginit/api"
 )
 
 var gitlabCmd = &cobra.Command{
@@ -10,7 +10,7 @@ var gitlabCmd = &cobra.Command{
 	Short: "Initialize repo for Gitlab",
 	Long:  ``,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("gitlab called")
+		api.GetAnswers("gitlab", "")
 	},
 }
 
