@@ -27,6 +27,7 @@ var rootCmd = &cobra.Command{
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		console.Verbose = verbose
 		console.NoColor = noColor
+		console.Accessible = accessibility
 		return initConfig()
 	},
 	Long: ``,
