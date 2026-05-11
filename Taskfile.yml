@@ -113,3 +113,16 @@ tasks:
     desc: Generate documentation
     cmds:
       - go run bin/gendocs/main.go {{.CLI_ARGS}}
+
+  smoke:
+    desc: Smoke test the CLI
+    cmds:
+      - echo "Running smoke tests..."
+      - '{{.PUBLISH_DIR}}/{{.APP_NAME}} --config ginit.yml --help'
+      - '{{.PUBLISH_DIR}}/{{.APP_NAME}} --config ginit.yml --version'
+      - '{{.PUBLISH_DIR}}/{{.APP_NAME}} --config ginit.yml gitignore --help'
+      - '{{.PUBLISH_DIR}}/{{.APP_NAME}} --config ginit.yml config set github testKey testValue'
+      - '{{.PUBLISH_DIR}}/{{.APP_NAME}} --config ginit.yml config get github testKey'
+      - '{{.PUBLISH_DIR}}/{{.APP_NAME}} --config ginit.yml config set github token abcd'
+      - '{{.PUBLISH_DIR}}/{{.APP_NAME}} --config ginit.yml config get github token'
+      - '{{.PUBLISH_DIR}}/{{.APP_NAME}} --config ginit.yml config all'

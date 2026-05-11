@@ -1,0 +1,27 @@
+defaultbranch: main
+providers:
+- name: azure
+  token: ""
+  baseurl: https://dev.azure.com
+  options: {}
+- name: bitbucket
+  token: ""
+  baseurl: https://api.bitbucket.org/2.0
+  options: {}
+- name: forgejo
+  token: ""
+  baseurl: https://codeberg.org
+  options: {}
+- name: gitea
+  token: ""
+  baseurl: https://gitea.com
+  options: {}
+- name: github
+  token: abcd
+  baseurl: https://github.com
+  options:
+    testKey: testValue
+- name: gitlab
+  token: ""
+  baseurl: https://gitlab.com
+  options: {}

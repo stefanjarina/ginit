@@ -1,0 +1,34 @@
+name: Main Test Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'main'
+    tags-ignore:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Task
+        uses: go-task/setup-task@v1
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: false
+
+      - name: Build
+        run: task build
+
+      - name: Test
+        run: task test
+
+      - name: Smoke CLI
+        run: task smoke
