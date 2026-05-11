@@ -47,7 +47,7 @@ func VisibilityChoices(repository string) []string {
 // GetGitIgnoreGroup builds the multi-select prompt for the .gitignore command
 // and the init flow. availableTypes is the list returned by gitignore.io.
 //
-// Order matches novugit's AskForGitignoreDetails: gitignore.io templates first,
+// Order: gitignore.io templates first,
 // custom files second. The custom-files multiselect is only included when there
 // are files to choose from in the current directory.
 func GetGitIgnoreGroup(availableTypes []string, filesVal *[]string, typesVal *[]string) *huh.Group {

@@ -12,7 +12,7 @@ import (
 // returns a populated ProjectInfo. availableTypes is the list fetched from
 // gitignore.io.
 //
-// Mirrors novugit's Prompts.AskForProjectInfo: name → description → visibility,
+// name → description → visibility,
 // then if a .gitignore already exists prompts to keep it; otherwise asks for
 // gitignore.io templates and (when there are files) custom files to ignore.
 func AskForProjectInfo(provider string, availableTypes []string, accessibility bool) (*model.ProjectInfo, error) {
@@ -31,7 +31,7 @@ func AskForProjectInfo(provider string, availableTypes []string, accessibility b
 		return nil, err
 	}
 
-	// If .gitignore already exists, offer to keep it as-is — matches novugit.
+	// If .gitignore already exists, offer to keep it as-is
 	if _, statErr := os.Stat(filepath.Join(cwd, ".gitignore")); statErr == nil {
 		keep, err := AskToKeepExistingGitignore(accessibility)
 		if err != nil {

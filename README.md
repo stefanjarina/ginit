@@ -1,4 +1,4 @@
-# novugit
+# ginit
 
 Initialize GIT repository in a folder.
 
@@ -34,16 +34,19 @@ ginit init github --repo-name myrepo --description "This is my awesome repo"
 
 ## TODO
 
-- Implement repositories
-  - [ ] Gitlab
-  - [ ] BitBucket (optional as I am not using it)
-  - [ ] Azure Devops
+- Implement other repositories
+  - [x] Gitlab (no good sdk for .net, will need to write own implementation)
+  - [x] BitBucket (optional as I am not using it)
+  - [x] Azure DevOps
+  - [x] Gitea
+  - [x] Forgejo
 - [ ] Add other config files with sane defaults
 - [ ] Add build system (github actions?)
 - Quality control
-  - [ ] Check if all errors are properly handled
-  - [ ] Check if output messages make sense
-- [ ] Add tests
+  - [x] Check if all errors are properly handled
+  - [x] Check if output messages make sense
+  - [ ] Encrypt tokens in config file
+- [x] Add tests
 - [ ] Publish (scoop? chocolatey? nuget?)
 - And more ideas???
   - [ ] add config functionality for setting "presets" or defaults

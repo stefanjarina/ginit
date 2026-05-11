@@ -16,7 +16,6 @@ type Config struct {
 }
 
 // providerDefaults seeds known providers with sensible BaseUrls.
-// Mirrors novugit's Configuration.CreateEmptyConfig.
 var providerDefaults = map[string]string{
 	"azure":     "https://dev.azure.com",
 	"bitbucket": "https://api.bitbucket.org/2.0",
@@ -86,8 +85,7 @@ func (c *Config) GetProvider(name string) *Provider {
 	return nil
 }
 
-// GetValue mirrors novugit's Configuration.GetValue: special-cases "token" and
-// "baseurl"; everything else lives in Options.
+// special-cases "token" and "baseurl"; everything else lives in Options.
 func (c *Config) GetValue(provider, key string) string {
 	p := c.GetProvider(provider)
 	if p == nil {

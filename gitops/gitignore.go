@@ -9,8 +9,7 @@ import (
 )
 
 // WriteGitignore composes a .gitignore from a custom-files section and the
-// gitignore.io content, then writes it under dir. Mirrors
-// novugit's RepoService.CreateGitIgnoreFile.
+// gitignore.io content, then writes it under dir.
 func WriteGitignore(dir string, customFiles []string, ioContent string) error {
 	if len(customFiles) == 0 && strings.TrimSpace(ioContent) == "" {
 		return nil

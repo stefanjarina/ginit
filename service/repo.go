@@ -19,11 +19,9 @@ import (
 type ProjectInfo = model.ProjectInfo
 
 // PreferSshUrl returns true when the platform should default to SSH clone URLs.
-// Mirrors novugit's `OperatingSystem.IsWindows() ? https : ssh` checks.
 func PreferSshUrl() bool { return runtime.GOOS != "windows" }
 
-// RepoService orchestrates the end-to-end init flow. Mirrors
-// Novugit.API/Services/RepoService.cs.
+// RepoService orchestrates the end-to-end init flow.
 type RepoService struct {
 	Cfg           *config.Config
 	CfgPath       string
@@ -133,8 +131,7 @@ func (r *RepoService) PushToRemote() error {
 // ----- provider handlers -----
 
 // ensureBaseUrlAndToken prompts for missing token / base URL and persists them.
-// Mirrors novugit's RepoService.VerifyInfoFromConfig: always checks baseurl
-// then token. Defaults seeded by config.CreateDefault keep github/azure quiet.
+// always checks baseurl then token. Defaults seeded by config.CreateDefault keep github/azure quiet.
 func (r *RepoService) ensureBaseUrlAndToken(provider string) error {
 	if r.Cfg.GetValue(provider, "baseurl") == "" {
 		baseUrl, err := prompts.AskForBaseUrl(provider, r.Accessibility)
@@ -265,7 +262,7 @@ func (r *RepoService) handleGitlab() (*ProjectInfo, error) {
 		return nil, err
 	}
 
-	// Order matches novugit.HandleGitlab: project info (incl. visibility) first,
+	// Project info (incl. visibility) first,
 	// THEN authenticate + GetGroups, because the group query is filtered by visibility.
 	pi, err := prompts.AskForProjectInfo("gitlab", availableTypes, r.Accessibility)
 	if err != nil {

@@ -98,7 +98,6 @@ func (gc *GitlabClient) GetGroups(visibility string) ([]GitlabGroup, error) {
 
 	out := make([]GitlabGroup, 0, len(groups)+1)
 	if len(nss) > 0 {
-		// Personal namespace first, mirroring novugit.
 		out = append(out, GitlabGroup{ID: nss[0].ID, Name: gc.user.Name, Path: nss[0].Path})
 	}
 	out = append(out, groups...)
@@ -166,4 +165,3 @@ func (gc *GitlabClient) do(method, pathAndQuery string, body, out any) error {
 	}
 	return json.Unmarshal(rb, out)
 }
-

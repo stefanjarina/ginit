@@ -31,7 +31,6 @@ func (gc *GithubClient) Connect() error {
 
 // CreateRepository creates the repo on github.com under the authenticated user
 // and returns the SSH URL on Unix (HTTPS clone URL on Windows).
-// Mirrors novugit's GithubService.CreateRepository.
 func (gc *GithubClient) CreateRepository(name, description, visibility string) (string, error) {
 	private := visibility == "private"
 	repo := &github.Repository{
