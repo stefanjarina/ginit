@@ -1,49 +1,111 @@
 package api
 
 import (
-	"context"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
 	"runtime"
+	"strings"
+	"time"
 
-	"github.com/google/go-github/v80/github"
 	gerrors "github.com/stefanjarina/ginit/errors"
 )
 
-type GithubClient struct {
-	token  string
-	client *github.Client
-	user   *github.User
+type githubRepoResponse struct {
+	CloneURL string `json:"clone_url"`
+	SSHURL   string `json:"ssh_url"`
 }
 
-func NewGithubClient(token string) *GithubClient {
-	return &GithubClient{token: token}
+type GithubClient struct {
+	token   string
+	baseUrl string
+	http    *http.Client
+}
+
+func NewGithubClient(token, baseUrl string) *GithubClient {
+	return &GithubClient{
+		token:   token,
+		baseUrl: NormalizeGithubAPIBase(baseUrl),
+		http:    &http.Client{Timeout: 30 * time.Second},
+	}
+}
+
+func NormalizeGithubAPIBase(baseUrl string) string {
+	if baseUrl == "" {
+		baseUrl = "https://github.com"
+	}
+	baseUrl = strings.TrimRight(baseUrl, "/")
+	if baseUrl == "https://github.com" || baseUrl == "http://github.com" ||
+		baseUrl == "https://api.github.com" || baseUrl == "http://api.github.com" {
+		return "https://api.github.com/"
+	}
+	if !strings.HasSuffix(baseUrl, "/api/v3") {
+		baseUrl += "/api/v3"
+	}
+	return baseUrl + "/"
 }
 
 func (gc *GithubClient) Connect() error {
-	ctx := context.Background()
-	gc.client = github.NewClient(nil).WithAuthToken(gc.token)
-	user, _, err := gc.client.Users.Get(ctx, "")
-	if err != nil {
-		return err
-	}
-	gc.user = user
-	return nil
+	return gc.get("user", nil)
 }
 
 // CreateRepository creates the repo on github.com under the authenticated user
 // and returns the SSH URL on Unix (HTTPS clone URL on Windows).
 func (gc *GithubClient) CreateRepository(name, description, visibility string) (string, error) {
-	private := visibility == "private"
-	repo := &github.Repository{
-		Name:        github.Ptr(name),
-		Description: github.Ptr(description),
-		Private:     github.Ptr(private),
+	body := map[string]any{
+		"name":        name,
+		"description": description,
+		"private":     visibility == "private",
 	}
-	created, _, err := gc.client.Repositories.Create(context.Background(), "", repo)
-	if err != nil {
+	var resp githubRepoResponse
+	if err := gc.post("user/repos", body, &resp); err != nil {
 		return "", gerrors.NewProvider("github", "create repository", err)
 	}
 	if runtime.GOOS == "windows" {
-		return created.GetCloneURL(), nil
+		return resp.CloneURL, nil
 	}
-	return created.GetSSHURL(), nil
+	return resp.SSHURL, nil
+}
+
+func (gc *GithubClient) get(pathAndQuery string, out any) error {
+	return gc.do(http.MethodGet, pathAndQuery, nil, out)
+}
+
+func (gc *GithubClient) post(path string, body, out any) error {
+	return gc.do(http.MethodPost, path, body, out)
+}
+
+func (gc *GithubClient) do(method, pathAndQuery string, body, out any) error {
+	var reader io.Reader
+	if body != nil {
+		buf, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		reader = bytes.NewReader(buf)
+	}
+	req, err := http.NewRequest(method, gc.baseUrl+pathAndQuery, reader)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "token "+gc.token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := gc.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	rb, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("github %s %s: %d %s", method, pathAndQuery, resp.StatusCode, strings.TrimSpace(string(rb)))
+	}
+	if out == nil {
+		return nil
+	}
+	return json.Unmarshal(rb, out)
 }

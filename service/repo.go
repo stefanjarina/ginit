@@ -161,13 +161,14 @@ func (r *RepoService) handleGithub() (*ProjectInfo, error) {
 		return nil, err
 	}
 	token := r.Cfg.GetValue("github", "token")
+	baseUrl := r.Cfg.GetValue("github", "baseurl")
 
 	availableTypes, err := r.fetchGitignoreList()
 	if err != nil {
 		return nil, err
 	}
 
-	client := api.NewGithubClient(token)
+	client := api.NewGithubClient(token, baseUrl)
 	if err := console.Run("Authenticating to GitHub", client.Connect); err != nil {
 		return nil, gerrors.NewProvider("github", "authenticate", err)
 	}
