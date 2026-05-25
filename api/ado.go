@@ -1,31 +1,49 @@
 package api
 
 import (
-	"context"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"runtime"
 	"strings"
+	"time"
 
-	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/core"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/identity"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/location"
 	gerrors "github.com/stefanjarina/ginit/errors"
 )
 
+const adoAPIVersion = "7.1"
+
+type adoProjectsResponse struct {
+	Value []struct {
+		Name string `json:"name"`
+	} `json:"value"`
+}
+
+type adoProject struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type adoRepoResponse struct {
+	RemoteURL string `json:"remoteUrl"`
+	SshURL    string `json:"sshUrl"`
+}
+
 type AdoClient struct {
-	url            string
-	token          string
-	coreClient     core.Client
-	locationClient location.Client
-	repoClient     git.Client
-	user           *identity.Identity
-	ctx            context.Context
+	orgUrl string
+	token  string
+	http   *http.Client
 }
 
 func NewAdoClient(token, baseUrl, orgName string) *AdoClient {
-	return &AdoClient{url: BuildAdoOrgURL(baseUrl, orgName), token: token}
+	return &AdoClient{
+		orgUrl: BuildAdoOrgURL(baseUrl, orgName),
+		token:  token,
+		http:   &http.Client{Timeout: 30 * time.Second},
+	}
 }
 
 func BuildAdoOrgURL(baseUrl, orgName string) string {
@@ -44,39 +62,24 @@ func BuildAdoOrgURL(baseUrl, orgName string) string {
 }
 
 func (ac *AdoClient) Connect() error {
-	ctx := context.Background()
-	conn := azuredevops.NewPatConnection(ac.url, ac.token)
-	coreClient, err := core.NewClient(ctx, conn)
-	if err != nil {
-		return err
+	q := url.Values{
+		"stateFilter": {"WellFormed"},
+		"$top":        {"1"},
 	}
-	gitClient, err := git.NewClient(ctx, conn)
-	if err != nil {
-		return err
-	}
-	locClient := location.NewClient(ctx, conn)
-	conData, err := locClient.GetConnectionData(ctx, location.GetConnectionDataArgs{})
-	if err != nil {
-		return err
-	}
-	ac.repoClient = gitClient
-	ac.locationClient = locClient
-	ac.coreClient = coreClient
-	ac.user = conData.AuthenticatedUser
-	ac.ctx = ctx
-	return nil
+	return ac.get("projects?"+q.Encode(), nil)
 }
 
 // GetProjects returns the names of every project the authenticated user can see.
 func (ac *AdoClient) GetProjects() ([]string, error) {
-	resp, err := ac.coreClient.GetProjects(ac.ctx, core.GetProjectsArgs{})
-	if err != nil {
+	q := url.Values{"stateFilter": {"WellFormed"}}
+	var resp adoProjectsResponse
+	if err := ac.get("projects?"+q.Encode(), &resp); err != nil {
 		return nil, err
 	}
 	out := make([]string, 0, len(resp.Value))
 	for _, p := range resp.Value {
-		if p.Name != nil {
-			out = append(out, *p.Name)
+		if p.Name != "" {
+			out = append(out, p.Name)
 		}
 	}
 	return out, nil
@@ -85,33 +88,88 @@ func (ac *AdoClient) GetProjects() ([]string, error) {
 // CreateRepository creates a git repo under the given project. Returns SSH URL
 // on Unix or RemoteUrl (HTTPS) on Windows. Mirrors AzureService.CreateRepository.
 func (ac *AdoClient) CreateRepository(projectName, repoName string) (string, error) {
-	projectRef, err := ac.coreClient.GetProject(ac.ctx, core.GetProjectArgs{ProjectId: &projectName})
-	if err != nil {
+	var project adoProject
+	if err := ac.get("projects/"+url.PathEscape(projectName), &project); err != nil {
 		return "", gerrors.NewProvider("azure", "fetch project '"+projectName+"'", err)
 	}
 
-	tpRef := &core.TeamProjectReference{Id: projectRef.Id, Name: projectRef.Name}
-	created, err := ac.repoClient.CreateRepository(ac.ctx, git.CreateRepositoryArgs{
-		GitRepositoryToCreate: &git.GitRepositoryCreateOptions{
-			Name:    &repoName,
-			Project: tpRef,
+	body := map[string]any{
+		"name": repoName,
+		"project": map[string]string{
+			"id":   project.ID,
+			"name": project.Name,
 		},
-	})
-	if err != nil {
-		// Friendly error for the well-known duplicate-name case.
+	}
+	var created adoRepoResponse
+	if err := ac.postProject(projectName, "git/repositories", body, &created); err != nil {
 		if strings.Contains(err.Error(), "TF400948") {
 			return "", gerrors.NewProvider("azure", "repository '"+repoName+"' already exists", err)
 		}
 		return "", gerrors.NewProvider("azure", "create repository", err)
 	}
-	if runtime.GOOS == "windows" && created.RemoteUrl != nil {
-		return *created.RemoteUrl, nil
+	if runtime.GOOS == "windows" && created.RemoteURL != "" {
+		return created.RemoteURL, nil
 	}
-	if created.SshUrl != nil {
-		return *created.SshUrl, nil
+	if created.SshURL != "" {
+		return created.SshURL, nil
 	}
-	if created.RemoteUrl != nil {
-		return *created.RemoteUrl, nil
+	if created.RemoteURL != "" {
+		return created.RemoteURL, nil
 	}
 	return "", gerrors.NewProvider("azure", "created repo has no URL", nil)
+}
+
+func (ac *AdoClient) get(pathAndQuery string, out any) error {
+	return ac.do(http.MethodGet, "", pathAndQuery, nil, out)
+}
+
+func (ac *AdoClient) postProject(project, path string, body, out any) error {
+	return ac.do(http.MethodPost, project, path, body, out)
+}
+
+func (ac *AdoClient) do(method, projectPrefix, pathAndQuery string, body, out any) error {
+	var reader io.Reader
+	if body != nil {
+		buf, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		reader = bytes.NewReader(buf)
+	}
+
+	endpoint := ac.orgUrl
+	if projectPrefix != "" {
+		endpoint += "/" + url.PathEscape(projectPrefix)
+	}
+	endpoint += "/_apis/" + pathAndQuery
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return err
+	}
+	q := parsed.Query()
+	q.Set("api-version", adoAPIVersion)
+	parsed.RawQuery = q.Encode()
+
+	req, err := http.NewRequest(method, parsed.String(), reader)
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth("", ac.token)
+	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := ac.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	rb, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("azure %s %s: %d %s", method, pathAndQuery, resp.StatusCode, strings.TrimSpace(string(rb)))
+	}
+	if out == nil {
+		return nil
+	}
+	return json.Unmarshal(rb, out)
 }
