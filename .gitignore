@@ -2,6 +2,7 @@
 
 .claude/settings.local.json
 .codex/
+publish/
 
 # GITIGNORE.IO: 
 # Created by https://www.toptal.com/developers/gitignore/api/dotnetcore,go,goland+all,linux,macos,node,visualstudiocode,webstorm+all,windows
