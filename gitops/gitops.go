@@ -2,13 +2,19 @@ package gitops
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
+	"github.com/mattn/go-isatty"
 	gerrors "github.com/stefanjarina/ginit/errors"
 )
+
+// ErrNothingToCommit is returned by Commit when the index is empty.
+var ErrNothingToCommit = errors.New("nothing to commit")
 
 // run executes a non-interactive git command, capturing stderr for diagnostics.
 func run(dir string, args ...string) error {
@@ -53,8 +59,94 @@ func AddAll(dir string) error {
 	return run(dir, "add", "-A")
 }
 
+// output runs a git command and returns its trimmed stdout.
+func output(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	return strings.TrimSpace(string(out)), err
+}
+
+// CheckInstalled reports an error when git is not on PATH.
+func CheckInstalled() error {
+	if _, err := exec.LookPath("git"); err != nil {
+		return gerrors.NewHint("git was not found on PATH", "install git and make sure it is on PATH", err)
+	}
+	return nil
+}
+
+// CheckIdentity verifies that a commit author and committer identity is
+// configured for dir, either through user.name / user.email or through the
+// GIT_AUTHOR_* / GIT_COMMITTER_* environment variables. Run it inside the
+// repository that will be committed to so includeIf sections apply.
+func CheckIdentity(dir string) error {
+	name, _ := output(dir, "config", "--get", "user.name")
+	email, _ := output(dir, "config", "--get", "user.email")
+	if email == "" {
+		email = os.Getenv("EMAIL")
+	}
+
+	var missing []string
+	if name == "" && (os.Getenv("GIT_AUTHOR_NAME") == "" || os.Getenv("GIT_COMMITTER_NAME") == "") {
+		missing = append(missing, "user.name")
+	}
+	if email == "" && (os.Getenv("GIT_AUTHOR_EMAIL") == "" || os.Getenv("GIT_COMMITTER_EMAIL") == "") {
+		missing = append(missing, "user.email")
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+
+	cmds := make([]string, 0, len(missing))
+	for _, k := range missing {
+		cmds = append(cmds, fmt.Sprintf("git config --global %s \"...\"", k))
+	}
+	return gerrors.NewHint(
+		fmt.Sprintf("git commit identity is not configured (missing %s)", strings.Join(missing, ", ")),
+		"set it with: "+strings.Join(cmds, " && "), nil)
+}
+
+// HasStagedFiles reports whether the index of dir contains any entries.
+func HasStagedFiles(dir string) (bool, error) {
+	out, err := output(dir, "ls-files", "--cached")
+	if err != nil {
+		return false, gerrors.New("git ls-files", err)
+	}
+	return out != "", nil
+}
+
+// SigningEnabled reports whether commit.gpgsign is on for dir.
+func SigningEnabled(dir string) bool {
+	v, _ := output(dir, "config", "--type=bool", "--get", "commit.gpgsign")
+	return v == "true"
+}
+
+// Commit creates a commit from the index. When commit signing is enabled git
+// runs attached to the terminal so the signing program can prompt for a
+// passphrase; callers must not have a spinner running in that case.
 func Commit(dir, msg string) error {
-	return run(dir, "commit", "-m", msg)
+	staged, err := HasStagedFiles(dir)
+	if err != nil {
+		return err
+	}
+	if !staged {
+		return ErrNothingToCommit
+	}
+
+	if !SigningEnabled(dir) {
+		return run(dir, "commit", "-m", msg)
+	}
+
+	if err := runInteractive(dir, "commit", "-m", msg); err != nil {
+		reason := "the signing program could not complete"
+		if !isatty.IsTerminal(os.Stdin.Fd()) {
+			reason = "stdin is not a terminal, so the signing program could not prompt for a passphrase"
+		}
+		return gerrors.NewHint(
+			"commit signing (commit.gpgsign) failed: "+reason,
+			"make sure your signing key can be unlocked (e.g. export GPG_TTY=$(tty), or cache the passphrase in your agent), or turn off commit.gpgsign", err)
+	}
+	return nil
 }
 
 func AddRemote(dir, name, url string) error {
