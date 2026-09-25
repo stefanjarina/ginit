@@ -56,6 +56,13 @@ type GithubOwner struct {
 	Visibilities []string
 }
 
+// SkippedGithubOrg is an organization GetOwners left out because its
+// settings could not be read.
+type SkippedGithubOrg struct {
+	Login string
+	Err   error
+}
+
 type GithubClient struct {
 	token   string
 	baseUrl string
@@ -115,20 +122,23 @@ func (gc *GithubClient) UserOwner() (GithubOwner, error) {
 }
 
 // GetOwners returns the authenticated user followed by the organizations the
-// user is an active member of and may create repositories in.
-func (gc *GithubClient) GetOwners() ([]GithubOwner, error) {
+// user is an active member of and may create repositories in. An
+// organization whose settings cannot be read (for example a fine-grained
+// token without access to it) is left out and reported in skipped; only a
+// failure to list the memberships is returned as an error.
+func (gc *GithubClient) GetOwners() (owners []GithubOwner, skipped []SkippedGithubOrg, err error) {
 	user, err := gc.UserOwner()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	owners := []GithubOwner{user}
+	owners = []GithubOwner{user}
 
 	const perPage = 100
 	for page := 1; ; page++ {
 		var memberships []githubOrgMembership
 		query := "user/memberships/orgs?state=active&per_page=" + strconv.Itoa(perPage) + "&page=" + strconv.Itoa(page)
 		if err := gc.get(query, &memberships); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for _, m := range memberships {
 			if m.Organization.Login == "" {
@@ -136,7 +146,8 @@ func (gc *GithubClient) GetOwners() ([]GithubOwner, error) {
 			}
 			var org githubOrg
 			if err := gc.get("orgs/"+url.PathEscape(m.Organization.Login), &org); err != nil {
-				return nil, err
+				skipped = append(skipped, SkippedGithubOrg{Login: m.Organization.Login, Err: err})
+				continue
 			}
 			if org.Login == "" {
 				org.Login = m.Organization.Login
@@ -149,7 +160,7 @@ func (gc *GithubClient) GetOwners() ([]GithubOwner, error) {
 			break
 		}
 	}
-	return owners, nil
+	return owners, skipped, nil
 }
 
 // orgOwner turns an organization into an owner. It returns false when the

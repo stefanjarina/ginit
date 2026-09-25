@@ -229,19 +229,87 @@ func TestGithubGetOwners(t *testing.T) {
 				}
 			}))}
 
-			if _, err := client.GetOwners(); err == nil {
+			if _, _, err := client.GetOwners(); err == nil {
 				t.Fatal("GetOwners() before Connect error = nil, want error")
 			}
 			if err := client.Connect(); err != nil {
 				t.Fatalf("Connect() error = %v", err)
 			}
-			got, err := client.GetOwners()
+			got, skipped, err := client.GetOwners()
 			if err != nil {
 				t.Fatalf("GetOwners() error = %v", err)
+			}
+			if len(skipped) != 0 {
+				t.Errorf("GetOwners() skipped = %#v, want none", skipped)
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("GetOwners() =\n%#v\nwant\n%#v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestGithubGetOwnersSkipsUnreadableOrg(t *testing.T) {
+	client := NewGithubClient("secret", "")
+	client.http = &http.Client{Transport: handlerTransport(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/user":
+			_, _ = w.Write([]byte(`{"login":"alice","name":"Alice"}`))
+		case "/user/memberships/orgs":
+			_, _ = w.Write([]byte(`[
+				{"role":"member","organization":{"login":"first"}},
+				{"role":"member","organization":{"login":"hidden"}},
+				{"role":"member","organization":{"login":"third"}}
+			]`))
+		case "/orgs/first":
+			_, _ = w.Write([]byte(`{"login":"first","name":"First"}`))
+		case "/orgs/hidden":
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"message":"Resource not accessible by personal access token"}`))
+		case "/orgs/third":
+			_, _ = w.Write([]byte(`{"login":"third","name":"Third"}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))}
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+
+	got, skipped, err := client.GetOwners()
+	if err != nil {
+		t.Fatalf("GetOwners() error = %v", err)
+	}
+	want := []GithubOwner{
+		{Login: "alice", Name: "Alice", Visibilities: []string{"private", "public"}},
+		{Login: "first", Name: "First", IsOrg: true, Visibilities: []string{"private", "public"}},
+		{Login: "third", Name: "Third", IsOrg: true, Visibilities: []string{"private", "public"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("GetOwners() =\n%#v\nwant\n%#v", got, want)
+	}
+	if len(skipped) != 1 || skipped[0].Login != "hidden" || skipped[0].Err == nil ||
+		!strings.Contains(skipped[0].Err.Error(), "403") {
+		t.Errorf("GetOwners() skipped = %#v, want hidden with a 403 error", skipped)
+	}
+}
+
+func TestGithubGetOwnersMembershipError(t *testing.T) {
+	client := NewGithubClient("secret", "")
+	client.http = &http.Client{Transport: handlerTransport(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/user":
+			_, _ = w.Write([]byte(`{"login":"alice","name":"Alice"}`))
+		case "/user/memberships/orgs":
+			w.WriteHeader(http.StatusForbidden)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))}
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	if _, _, err := client.GetOwners(); err == nil {
+		t.Fatal("GetOwners() on membership error = nil, want error")
 	}
 }
