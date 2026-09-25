@@ -159,7 +159,7 @@ func (r *RepoService) CreateGitignoreFile(pi *ProjectInfo) error {
 // that includeIf sections of the user's git config apply.
 func (r *RepoService) PrepareLocalGit(dir string) error {
 	return console.Run("Initializing local git", func() error {
-		if err := gitops.Init(dir, r.Cfg.DefaultBranch); err != nil {
+		if err := gitops.Init(dir, r.Cfg.EffectiveDefaultBranch()); err != nil {
 			return err
 		}
 		return gitops.CheckIdentity(dir)
@@ -294,6 +294,22 @@ func (r *RepoService) PushToRemote() error {
 	if err != nil {
 		return err
 	}
+	return r.push(cwd, branch)
+}
+
+// PushInitialBranch prompts the user, then pushes the configured default
+// branch that PrepareLocalGit created. Hosts that do not take a default branch
+// on create adopt the first branch pushed to an empty repository, so this
+// makes the remote default match the local one.
+func (r *RepoService) PushInitialBranch() error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	return r.push(cwd, r.Cfg.EffectiveDefaultBranch())
+}
+
+func (r *RepoService) push(dir, branch string) error {
 	push, err := prompts.AskToPushToRemote(r.Accessibility)
 	if err != nil {
 		return err
@@ -301,7 +317,7 @@ func (r *RepoService) PushToRemote() error {
 	if !push {
 		return nil
 	}
-	if err := gitops.Push(cwd, "origin", branch); err != nil {
+	if err := gitops.Push(dir, "origin", branch); err != nil {
 		return gerrors.New("push to remote", err)
 	}
 	console.Success("Pushed to remote")
@@ -516,7 +532,7 @@ func (r *RepoService) handleGitlab() (*ProjectInfo, error) {
 
 	var urls api.CloneURLs
 	if err := console.Run("Creating repo on GitLab", func() error {
-		u, e := client.CreateRepository(groupId, pi.Name, pi.Description, pi.Visibility)
+		u, e := client.CreateRepository(groupId, pi.Name, pi.Description, pi.Visibility, r.Cfg.EffectiveDefaultBranch())
 		urls = u
 		return e
 	}); err != nil {
@@ -637,7 +653,7 @@ func (r *RepoService) handleGiteaCompatible(provider string) (*ProjectInfo, erro
 
 	var urls api.CloneURLs
 	if err := console.Run("Creating repo on "+provider, func() error {
-		u, e := client.CreateRepository(owner, pi.Name, pi.Description, pi.Visibility)
+		u, e := client.CreateRepository(owner, pi.Name, pi.Description, pi.Visibility, r.Cfg.EffectiveDefaultBranch())
 		urls = u
 		return e
 	}); err != nil {

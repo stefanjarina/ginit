@@ -87,6 +87,11 @@ func (f *fakeSteps) PushToRemote() error {
 	return nil
 }
 
+func (f *fakeSteps) PushInitialBranch() error {
+	f.calls = append(f.calls, "PushInitialBranch")
+	return nil
+}
+
 type fakeGit struct {
 	hasGitDir bool
 	isRepo    bool
@@ -182,7 +187,7 @@ func TestFullInitRunsEveryStep(t *testing.T) {
 	if err := newRunner(svc, g, &bytes.Buffer{}).run("gitlab", modeFull); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := []string{"PrepareLocalGit", "CreateGitignoreFile", "CommitLocalGit", "CreateRemoteRepo:gitlab", "CreateRemote", "PushToRemote"}
+	want := []string{"PrepareLocalGit", "CreateGitignoreFile", "CommitLocalGit", "CreateRemoteRepo:gitlab", "CreateRemote", "PushInitialBranch"}
 	if !reflect.DeepEqual(svc.calls, want) {
 		t.Errorf("calls = %v, want %v", svc.calls, want)
 	}

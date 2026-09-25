@@ -154,3 +154,18 @@ func TestEffectiveSecretPatterns(t *testing.T) {
 		t.Errorf("configured secretpatterns = %q, want [*.secret]", got)
 	}
 }
+
+func TestEffectiveDefaultBranch(t *testing.T) {
+	tests := map[string]string{
+		"":        "main",
+		"  ":      "main",
+		"trunk":   "trunk",
+		" trunk ": "trunk",
+	}
+	for configured, want := range tests {
+		cfg := &Config{DefaultBranch: configured}
+		if got := cfg.EffectiveDefaultBranch(); got != want {
+			t.Errorf("EffectiveDefaultBranch() with %q = %q, want %q", configured, got, want)
+		}
+	}
+}

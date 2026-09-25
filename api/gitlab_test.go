@@ -221,3 +221,34 @@ func TestGitlabGetGroupsMayReturnNoGroups(t *testing.T) {
 		t.Fatalf("groups = %#v, want none", groups)
 	}
 }
+
+func TestGitlabCreateRepositoryBody(t *testing.T) {
+	var createBody map[string]any
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v4/projects" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&createBody); err != nil {
+			t.Fatalf("decode create body: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"http_url_to_repo":"https://gitlab.example.com/team/demo.git","ssh_url_to_repo":"git@gitlab.example.com:team/demo.git"}`))
+	})
+	client := NewGitlabClient("secret", "http://example.test")
+	client.http = &http.Client{Transport: handlerTransport(handler)}
+
+	if _, err := client.CreateRepository(20, "demo", "description", "private", "trunk"); err != nil {
+		t.Fatalf("CreateRepository() error = %v", err)
+	}
+	want := map[string]any{
+		"name":           "demo",
+		"description":    "description",
+		"namespace_id":   float64(20),
+		"visibility":     "private",
+		"default_branch": "trunk",
+	}
+	for k, v := range want {
+		if createBody[k] != v {
+			t.Errorf("create body %s = %#v, want %#v", k, createBody[k], v)
+		}
+	}
+}
