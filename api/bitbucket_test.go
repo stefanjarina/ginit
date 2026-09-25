@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,9 +12,8 @@ import (
 func TestBitbucketClientEndpointsAuthAndCreateBody(t *testing.T) {
 	var createBody map[string]any
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user, token, ok := r.BasicAuth()
-		if !ok || user != "alice" || token != "secret" {
-			t.Fatalf("BasicAuth() = %q/%q/%v, want alice/secret/true", user, token, ok)
+		if got := r.Header.Get("Authorization"); got != "Bearer secret" {
+			t.Fatalf("Authorization = %q, want %q", got, "Bearer secret")
 		}
 
 		switch r.URL.Path {
@@ -39,7 +39,8 @@ func TestBitbucketClientEndpointsAuthAndCreateBody(t *testing.T) {
 		}
 	})
 
-	client := NewBitbucketClient("alice", "secret", "http://example.test")
+	// A saved username must not turn Cloud requests into Basic auth.
+	client := NewBitbucketClient("alice", "secret", "https://api.bitbucket.org/2.0")
 	client.http = &http.Client{Transport: handlerTransport(handler)}
 	if err := client.Connect(); err != nil {
 		t.Fatalf("Connect() error = %v", err)
@@ -76,6 +77,53 @@ func TestBitbucketClientEndpointsAuthAndCreateBody(t *testing.T) {
 	project, ok := createBody["project"].(map[string]any)
 	if !ok || project["key"] != "PRJ" {
 		t.Fatalf("project body = %#v", createBody["project"])
+	}
+}
+
+func TestBitbucketClientAuthorizationHeader(t *testing.T) {
+	basic := "Basic " + base64.StdEncoding.EncodeToString([]byte("alice:secret"))
+	tests := []struct {
+		name    string
+		user    string
+		baseUrl string
+		want    string
+	}{
+		{"cloud default", "", "", "Bearer secret"},
+		{"cloud ignores user", "alice", "https://api.bitbucket.org/2.0", "Bearer secret"},
+		{"server bearer", "", "https://bitbucket.example.com", "Bearer secret"},
+		{"server basic", "alice", "https://bitbucket.example.com", basic},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got string
+			client := NewBitbucketClient(tt.user, "secret", tt.baseUrl)
+			client.http = &http.Client{Transport: handlerTransport(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got = r.Header.Get("Authorization")
+				_, _ = w.Write([]byte(`{}`))
+			}))}
+			if err := client.Connect(); err != nil {
+				t.Fatalf("Connect() error = %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("Authorization = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsBitbucketCloud(t *testing.T) {
+	tests := map[string]bool{
+		"":                              true,
+		"https://api.bitbucket.org/2.0": true,
+		"https://API.Bitbucket.org":     true,
+		"https://bitbucket.example.com": false,
+		"https://notbitbucket.org":      false,
+		"http://example.test":           false,
+	}
+	for baseUrl, want := range tests {
+		if got := IsBitbucketCloud(baseUrl); got != want {
+			t.Errorf("IsBitbucketCloud(%q) = %v, want %v", baseUrl, got, want)
+		}
 	}
 }
 
