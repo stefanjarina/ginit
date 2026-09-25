@@ -1,7 +1,9 @@
 package initcmd
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -12,19 +14,91 @@ import (
 	"github.com/stefanjarina/ginit/service"
 )
 
+// localPreparer writes .gitignore and creates the initial commit.
+type localPreparer interface {
+	CreateGitignoreFile(pi *service.ProjectInfo) error
+	CommitLocalGit(dir string) error
+}
+
+// initSteps is the subset of service.RepoService the init flow drives.
+type initSteps interface {
+	localPreparer
+	PrepareLocalGit(dir string) error
+	SetBeforeCreate(fn func(pi *service.ProjectInfo) error)
+	CreateRemoteRepo(provider string) (*service.ProjectInfo, error)
+	CreateRemote(remoteUrl string) error
+	PushToRemote() error
+}
+
+// repoSteps adapts *service.RepoService to initSteps.
+type repoSteps struct{ *service.RepoService }
+
+func (s repoSteps) SetBeforeCreate(fn func(pi *service.ProjectInfo) error) { s.BeforeCreate = fn }
+
+type initMode int
+
+const (
+	modeFull initMode = iota
+	modeOnlyRemote
+	modeOnlyPush
+)
+
+// runner holds everything one init invocation needs, so tests can swap
+// out the service and git/prompt side effects.
+type runner struct {
+	svc        initSteps
+	dir        string
+	out        io.Writer
+	force      bool
+	accessible bool
+
+	hasGitDir    func(dir string) bool
+	removeGitDir func(dir string) error
+	isRepository func(dir string) bool
+	remoteURL    func(dir, name string) (string, error)
+	askDelete    func(accessible bool) (bool, error)
+}
+
+// stepError names the step that failed; the name is what the user sees.
+// warning, when set, is printed after the error.
+type stepError struct {
+	step    string
+	err     error
+	warning string
+}
+
+func (e *stepError) Error() string { return fmt.Sprintf("%s: %v", e.step, e.err) }
+func (e *stepError) Unwrap() error { return e.err }
+
+func fail(step string, err error) error { return &stepError{step: step, err: err} }
+
 // accessibilityFromRoot reads the --accessibility flag set on rootCmd.
 func accessibilityFromRoot(cmd *cobra.Command) bool {
 	v, _ := cmd.Root().PersistentFlags().GetBool("accessibility")
 	return v
 }
 
-// runProvider implements the full init flow for one provider.
+func modeFromFlags() initMode {
+	switch {
+	case flagOnlyRemote:
+		return modeOnlyRemote
+	case flagOnlyPush:
+		return modeOnlyPush
+	default:
+		return modeFull
+	}
+}
+
+// runProvider wires the real dependencies and runs the init flow for one provider.
 // Service steps run through console.Run, which already prints their failure;
 // console.Error skips those errors, so each failure is reported only once.
 func runProvider(cmd *cobra.Command, provider string) {
-	if err := gitops.CheckInstalled(); err != nil {
-		console.Error("check git", err)
-		os.Exit(1)
+	mode := modeFromFlags()
+	if mode != modeOnlyRemote {
+		if err := gitops.CheckInstalled(); err != nil {
+			console.Error("check git", err)
+			os.Exit(1)
+		}
 	}
 
 	cwd, err := os.Getwd()
@@ -34,100 +108,137 @@ func runProvider(cmd *cobra.Command, provider string) {
 	}
 	accessible := accessibilityFromRoot(cmd)
 
-	// 1. Existing .git handling.
-	if gitops.HasGitDir(cwd) && !flagOnlyPush && !flagOnlyRemote {
-		remove := flagForce
+	r := &runner{
+		svc:          repoSteps{service.New(config.Current, config.CurrentPath, accessible)},
+		dir:          cwd,
+		out:          os.Stdout,
+		force:        flagForce,
+		accessible:   accessible,
+		hasGitDir:    gitops.HasGitDir,
+		removeGitDir: gitops.RemoveGitDir,
+		isRepository: gitops.IsRepository,
+		remoteURL:    gitops.RemoteURL,
+		askDelete:    prompts.AskToDeleteCurrentLocalRepo,
+	}
+
+	if err := r.run(provider, mode); err != nil {
+		var se *stepError
+		if errors.As(err, &se) {
+			console.Error(se.step, se.err)
+			if se.warning != "" {
+				console.Warning(se.warning)
+			}
+		} else {
+			console.Error(err.Error(), err)
+		}
+		os.Exit(1)
+	}
+}
+
+func (r *runner) run(provider string, mode initMode) error {
+	switch mode {
+	case modeOnlyRemote:
+		return r.onlyRemote(provider)
+	case modeOnlyPush:
+		return r.onlyPush()
+	default:
+		return r.full(provider)
+	}
+}
+
+// onlyRemote creates the hosting repository and prints its clone URL.
+// It never touches the local directory.
+func (r *runner) onlyRemote(provider string) error {
+	pi, err := r.svc.CreateRemoteRepo(provider)
+	if err != nil {
+		return fail("create remote repo", err)
+	}
+	console.Success("Remote repository created")
+	fmt.Fprintf(r.out, "Clone URL: %s\n", pi.RemoteUrl)
+	return nil
+}
+
+// onlyPush pushes an existing local repository to its configured origin.
+func (r *runner) onlyPush() error {
+	if !r.isRepository(r.dir) {
+		return fail("--only-push requires an existing git repository", fmt.Errorf("%s is not a git repository", r.dir))
+	}
+	if _, err := r.remoteURL(r.dir, "origin"); err != nil {
+		return fail("--only-push requires a remote named 'origin'", err)
+	}
+	if err := r.svc.PushToRemote(); err != nil {
+		return fail("push to remote", err)
+	}
+	return nil
+}
+
+// full initializes local git, writes .gitignore and commits before the remote
+// is created, then configures origin and pushes.
+func (r *runner) full(provider string) error {
+	if r.hasGitDir(r.dir) {
+		remove := r.force
 		if !remove {
-			ok, err := prompts.AskToDeleteCurrentLocalRepo(accessible)
+			ok, err := r.askDelete(r.accessible)
 			if err != nil {
-				console.Error("prompt", err)
-				os.Exit(1)
+				return fail("prompt", err)
 			}
 			remove = ok
 		}
 		if !remove {
 			console.Warning("Operation cancelled. Existing git repository found.")
-			return
+			return nil
 		}
-		if err := gitops.RemoveGitDir(cwd); err != nil {
-			console.Error("remove existing .git", err)
-			os.Exit(1)
-		}
-	} else if gitops.HasGitDir(cwd) && (flagOnlyPush || flagOnlyRemote) {
-		console.Info("Existing git repository found. --only-* option detected. Proceeding.")
-	}
-
-	svc := service.New(config.Current, config.CurrentPath, accessible)
-
-	// 2. --only-push: just push and exit.
-	if flagOnlyPush {
-		if err := svc.PushToRemote(); err != nil {
-			console.Error("push to remote", err)
-			os.Exit(1)
-		}
-		return
-	}
-
-	// 3. Local git init + identity check, before any prompt or provider call.
-	initLocal := !flagOnlyRemote
-	if initLocal {
-		if err := svc.PrepareLocalGit(cwd); err != nil {
-			_ = gitops.RemoveGitDir(cwd)
-			console.Error("initialize local git", err)
-			os.Exit(1)
+		if err := r.removeGitDir(r.dir); err != nil {
+			return fail("remove existing .git", err)
 		}
 	}
 
-	// 4. After the prompts and before the create call: write .gitignore and
+	// Local git init + identity check, before any prompt or provider call.
+	if err := r.svc.PrepareLocalGit(r.dir); err != nil {
+		_ = r.removeGitDir(r.dir)
+		return fail("initialize local git", err)
+	}
+
+	// After the prompts and before the create call: write .gitignore and
 	// create the initial commit, so a local failure leaves no remote behind.
 	var localErr error
-	svc.BeforeCreate = func(pi *service.ProjectInfo) error {
-		localErr = prepareBeforeCreate(svc, pi, cwd, initLocal)
+	r.svc.SetBeforeCreate(func(pi *service.ProjectInfo) error {
+		localErr = prepareBeforeCreate(r.svc, pi, r.dir)
 		return localErr
-	}
+	})
 
-	pi, err := svc.CreateRemoteRepo(provider)
+	pi, err := r.svc.CreateRemoteRepo(provider)
 	if err != nil {
-		if initLocal {
-			_ = gitops.RemoveGitDir(cwd)
-		}
+		_ = r.removeGitDir(r.dir)
 		if localErr != nil {
-			console.Error("prepare local repository", err)
-			console.Warning("No remote repository was created.")
-		} else {
-			console.Error("create remote repo", err)
+			return &stepError{step: "prepare local repository", err: err, warning: "No remote repository was created."}
 		}
-		os.Exit(1)
+		return fail("create remote repo", err)
 	}
 
-	// 5. Remote exists from here on; failures must name it.
-	if err := svc.CreateRemote(pi.RemoteUrl); err != nil {
-		failAfterCreate(provider, pi, "configure remote", err)
+	// Remote exists from here on; failures must name it.
+	if err := r.svc.CreateRemote(pi.RemoteUrl); err != nil {
+		return failAfterCreate(provider, pi, "configure remote", err)
 	}
-
-	if err := svc.PushToRemote(); err != nil {
-		failAfterCreate(provider, pi, "push to remote", err)
+	if err := r.svc.PushToRemote(); err != nil {
+		return failAfterCreate(provider, pi, "push to remote", err)
 	}
+	return nil
 }
 
-// prepareBeforeCreate writes .gitignore and, unless only the remote is
-// requested, commits the working tree. It runs before the provider create call.
-func prepareBeforeCreate(svc *service.RepoService, pi *service.ProjectInfo, dir string, commit bool) error {
+// prepareBeforeCreate writes .gitignore and commits the working tree.
+// It runs before the provider create call.
+func prepareBeforeCreate(svc localPreparer, pi *service.ProjectInfo, dir string) error {
 	if err := svc.CreateGitignoreFile(pi); err != nil {
 		return err
-	}
-	if !commit {
-		return nil
 	}
 	return svc.CommitLocalGit(dir)
 }
 
-// failAfterCreate reports a failure that happened after the repository was
-// created on the host, names the repository that was left behind, and exits.
-func failAfterCreate(provider string, pi *service.ProjectInfo, step string, err error) {
-	console.Error(step, err)
-	console.Warning(fmt.Sprintf(
+// failAfterCreate builds the error for a failure that happened after the
+// repository was created on the host, naming the repository left behind.
+func failAfterCreate(provider string, pi *service.ProjectInfo, step string, err error) error {
+	return &stepError{step: step, err: err, warning: fmt.Sprintf(
 		"The repository %q was already created on %s and was left in place: %s\nFix the problem above and push to it yourself (add it as the origin remote if it is missing), or delete it on %s.",
-		pi.Name, provider, pi.RemoteUrl, provider))
-	os.Exit(1)
+		pi.Name, provider, pi.RemoteUrl, provider)}
 }

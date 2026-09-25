@@ -27,7 +27,8 @@ func addSubcommands() {
 
 func init() {
 	InitCmd.PersistentFlags().BoolVarP(&flagForce, "force", "f", false, "Force init even if a git repository already exists")
-	InitCmd.PersistentFlags().BoolVar(&flagOnlyRemote, "only-remote", false, "Only create the remote repository, skip local git")
-	InitCmd.PersistentFlags().BoolVar(&flagOnlyPush, "only-push", false, "Only push the existing local repository to its remote")
+	InitCmd.PersistentFlags().BoolVar(&flagOnlyRemote, "only-remote", false, "Only create the remote repository and print its clone URL; do not touch the local directory")
+	InitCmd.PersistentFlags().BoolVar(&flagOnlyPush, "only-push", false, "Only push the existing local repository to its configured origin; do not create a remote repository")
+	InitCmd.MarkFlagsMutuallyExclusive("only-remote", "only-push")
 	addSubcommands()
 }
