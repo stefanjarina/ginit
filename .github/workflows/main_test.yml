@@ -7,13 +7,28 @@ on:
       - 'main'
     tags-ignore:
       - 'v*'
+  # Use `pull_request` (never `pull_request_target`): fork PRs run with a
+  # read-only GITHUB_TOKEN and no access to repository secrets.
+  pull_request:
+    branches:
+      - 'main'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Setup Task
         uses: go-task/setup-task@v2
