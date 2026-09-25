@@ -27,7 +27,13 @@ type RepoService struct {
 	CfgPath       string
 	Accessibility bool
 
-	GitignoreIo *gitignoreio.GitignoreIo
+	GitignoreIo GitignoreClient
+}
+
+// GitignoreClient is the subset of the gitignore.io client used by the init flow.
+type GitignoreClient interface {
+	List() ([]string, error)
+	FetchConfig(names []string) (string, error)
 }
 
 func New(cfg *config.Config, cfgPath string, accessibility bool) *RepoService {
@@ -163,10 +169,7 @@ func (r *RepoService) handleGithub() (*ProjectInfo, error) {
 	token := r.Cfg.GetValue("github", "token")
 	baseUrl := r.Cfg.GetValue("github", "baseurl")
 
-	availableTypes, err := r.fetchGitignoreList()
-	if err != nil {
-		return nil, err
-	}
+	availableTypes := r.fetchGitignoreList()
 
 	client := api.NewGithubClient(token, baseUrl)
 	if err := console.Run("Authenticating to GitHub", client.Connect); err != nil {
@@ -210,10 +213,7 @@ func (r *RepoService) handleAzure() (*ProjectInfo, error) {
 	org := r.Cfg.GetValue("azure", "OrgName")
 	baseUrl := r.Cfg.GetValue("azure", "baseurl")
 
-	availableTypes, err := r.fetchGitignoreList()
-	if err != nil {
-		return nil, err
-	}
+	availableTypes := r.fetchGitignoreList()
 
 	client := api.NewAdoClient(token, baseUrl, org)
 	if err := console.Run("Authenticating to Azure DevOps", client.Connect); err != nil {
@@ -258,10 +258,7 @@ func (r *RepoService) handleGitlab() (*ProjectInfo, error) {
 	token := r.Cfg.GetValue("gitlab", "token")
 	baseUrl := r.Cfg.GetValue("gitlab", "baseurl")
 
-	availableTypes, err := r.fetchGitignoreList()
-	if err != nil {
-		return nil, err
-	}
+	availableTypes := r.fetchGitignoreList()
 
 	// Project info (incl. visibility) first,
 	// THEN authenticate + GetGroups, because the group query is filtered by visibility.
@@ -319,10 +316,7 @@ func (r *RepoService) handleBitbucket() (*ProjectInfo, error) {
 	token := r.Cfg.GetValue("bitbucket", "token")
 	baseUrl := r.Cfg.GetValue("bitbucket", "baseurl")
 
-	availableTypes, err := r.fetchGitignoreList()
-	if err != nil {
-		return nil, err
-	}
+	availableTypes := r.fetchGitignoreList()
 
 	client := api.NewBitbucketClient(user, token, baseUrl)
 	var workspaces []api.BitbucketWorkspace
@@ -379,10 +373,7 @@ func (r *RepoService) handleGiteaCompatible(provider string) (*ProjectInfo, erro
 	token := r.Cfg.GetValue(provider, "token")
 	baseUrl := r.Cfg.GetValue(provider, "baseurl")
 
-	availableTypes, err := r.fetchGitignoreList()
-	if err != nil {
-		return nil, err
-	}
+	availableTypes := r.fetchGitignoreList()
 
 	client := api.NewGiteaClient(provider, token, baseUrl)
 	var owners []api.GiteaOwner
@@ -419,12 +410,19 @@ func (r *RepoService) handleGiteaCompatible(provider string) (*ProjectInfo, erro
 	return pi, nil
 }
 
-func (r *RepoService) fetchGitignoreList() ([]string, error) {
+// fetchGitignoreList returns the gitignore.io template list. A failure is not
+// fatal for init: it warns and returns an empty list so the user can still
+// create the repo, keep an existing .gitignore or ignore custom files.
+func (r *RepoService) fetchGitignoreList() []string {
 	var list []string
-	err := console.Run("Fetching gitignore.io template list", func() error {
+	err := console.RunOptional("Fetching gitignore.io template list", func() error {
 		l, e := r.GitignoreIo.List()
 		list = l
 		return e
 	})
-	return list, err
+	if err != nil {
+		console.Warning("Continuing without gitignore.io templates")
+		return nil
+	}
+	return list
 }

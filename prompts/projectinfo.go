@@ -10,7 +10,7 @@ import (
 
 // AskForProjectInfo runs the repo-detail + gitignore selection forms and
 // returns a populated ProjectInfo. availableTypes is the list fetched from
-// gitignore.io.
+// gitignore.io and may be empty when it is unavailable.
 //
 // name → description → visibility,
 // then if a .gitignore already exists prompts to keep it; otherwise asks for
@@ -42,9 +42,11 @@ func AskForProjectInfo(provider string, availableTypes []string, accessibility b
 		}
 	}
 
-	ignoreForm := huh.NewForm(
-		GetGitIgnoreGroup(availableTypes, &pi.ExcludedLocalFiles, &pi.GitIgnoreConfigs),
-	)
+	ignoreGroup := GetGitIgnoreGroup(availableTypes, &pi.ExcludedLocalFiles, &pi.GitIgnoreConfigs)
+	if ignoreGroup == nil {
+		return pi, nil
+	}
+	ignoreForm := huh.NewForm(ignoreGroup)
 	if err := ignoreForm.WithAccessible(accessibility).WithLayout(huh.LayoutStack).Run(); err != nil {
 		return nil, err
 	}
