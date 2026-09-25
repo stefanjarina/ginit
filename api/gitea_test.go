@@ -45,7 +45,7 @@ func TestGiteaClientOwnersAndCreateBody(t *testing.T) {
 		t.Fatalf("owners = %#v", owners)
 	}
 
-	remoteURL, err := client.CreateRepository(owners[1], "demo", "description", "limited")
+	remoteURL, err := client.CreateRepository(owners[1], "demo", "description", "private")
 	if err != nil {
 		t.Fatalf("CreateRepository() error = %v", err)
 	}
@@ -56,7 +56,38 @@ func TestGiteaClientOwnersAndCreateBody(t *testing.T) {
 	if remoteURL != wantURL {
 		t.Fatalf("remoteURL = %q, want %q", remoteURL, wantURL)
 	}
-	if createBody["name"] != "demo" || createBody["description"] != "description" || createBody["private"] != false || createBody["internal"] != true {
+	if createBody["name"] != "demo" || createBody["description"] != "description" || createBody["private"] != true {
 		t.Fatalf("create body = %#v", createBody)
+	}
+}
+
+func TestGiteaCreateRepositoryVisibility(t *testing.T) {
+	tests := map[string]bool{
+		"public":  false,
+		"private": true,
+		// Not offered for Gitea or Forgejo; must never produce a public repo.
+		"limited":  true,
+		"internal": true,
+		"":         true,
+	}
+	for visibility, wantPrivate := range tests {
+		var createBody map[string]any
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if err := json.NewDecoder(r.Body).Decode(&createBody); err != nil {
+				t.Fatalf("decode create body: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"clone_url":"https://gitea.example.com/alice/demo.git","ssh_url":"git@gitea.example.com:alice/demo.git"}`))
+		})
+		client := NewGiteaClient("forgejo", "secret", "http://example.test")
+		client.http = &http.Client{Transport: handlerTransport(handler)}
+		if _, err := client.CreateRepository(GiteaOwner{Username: "alice"}, "demo", "", visibility); err != nil {
+			t.Fatalf("CreateRepository(%q) error = %v", visibility, err)
+		}
+		if createBody["private"] != wantPrivate {
+			t.Errorf("CreateRepository(%q) private = %v, want %v", visibility, createBody["private"], wantPrivate)
+		}
+		if _, ok := createBody["internal"]; ok {
+			t.Errorf("CreateRepository(%q) sent internal: %#v", visibility, createBody)
+		}
 	}
 }

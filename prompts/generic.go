@@ -38,8 +38,6 @@ func VisibilityChoices(repository string) []string {
 	switch repository {
 	case "gitlab":
 		return []string{"private", "internal", "public"}
-	case "gitea", "forgejo":
-		return []string{"private", "limited", "public"}
 	default:
 		return []string{"private", "public"}
 	}

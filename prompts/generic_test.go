@@ -14,8 +14,8 @@ func TestVisibilityChoices(t *testing.T) {
 		"azure":     {"private", "public"},
 		"bitbucket": {"private", "public"},
 		"gitlab":    {"private", "internal", "public"},
-		"gitea":     {"private", "limited", "public"},
-		"forgejo":   {"private", "limited", "public"},
+		"gitea":     {"private", "public"},
+		"forgejo":   {"private", "public"},
 	}
 	for provider, want := range tests {
 		if got := VisibilityChoices(provider); !reflect.DeepEqual(got, want) {
