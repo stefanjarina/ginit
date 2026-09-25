@@ -183,6 +183,23 @@ func AskToDeleteCurrentLocalRepo(accessibility bool) (bool, error) {
 	return confirm, nil
 }
 
+// AskToUpdateRemote asks whether a remote that points at current should be
+// changed to url.
+func AskToUpdateRemote(name, current, url string, accessibility bool) (bool, error) {
+	confirm := false
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title(fmt.Sprintf("Remote %q already points to %s. Change it to %s?", name, current, url)).
+				Affirmative("Yes").Negative("No").Value(&confirm),
+		),
+	)
+	if err := form.WithAccessible(accessibility).WithLayout(huh.LayoutStack).Run(); err != nil {
+		return false, err
+	}
+	return confirm, nil
+}
+
 func required(label string) func(string) error {
 	return func(value string) error {
 		if strings.TrimSpace(value) == "" {

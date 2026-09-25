@@ -108,8 +108,11 @@ func runProvider(cmd *cobra.Command, provider string) {
 	}
 	accessible := accessibilityFromRoot(cmd)
 
+	svc := service.New(config.Current, config.CurrentPath, accessible)
+	svc.Force = flagForce
+
 	r := &runner{
-		svc:          repoSteps{service.New(config.Current, config.CurrentPath, accessible)},
+		svc:          repoSteps{svc},
 		dir:          cwd,
 		out:          os.Stdout,
 		force:        flagForce,

@@ -34,6 +34,13 @@ type RepoService struct {
 	// the repository is created on the host. An error aborts the create, so
 	// nothing is left behind on the remote side.
 	BeforeCreate func(pi *ProjectInfo) error
+
+	// Force updates an existing origin that points elsewhere without asking.
+	Force bool
+
+	// ConfirmRemoteUpdate asks whether an origin currently pointing at
+	// current should be changed to url.
+	ConfirmRemoteUpdate func(current, url string) (bool, error)
 }
 
 // GitignoreClient is the subset of the gitignore.io client used by the init flow.
@@ -48,6 +55,9 @@ func New(cfg *config.Config, cfgPath string, accessibility bool) *RepoService {
 		CfgPath:       cfgPath,
 		Accessibility: accessibility,
 		GitignoreIo:   gitignoreio.NewClient(),
+		ConfirmRemoteUpdate: func(current, url string) (bool, error) {
+			return prompts.AskToUpdateRemote("origin", current, url, accessibility)
+		},
 	}
 }
 
@@ -137,15 +147,51 @@ func (r *RepoService) CommitLocalGit(dir string) error {
 	return nil
 }
 
-// CreateRemote registers the origin remote in the local repo.
+// CreateRemote makes origin point at remoteUrl. A missing origin is added and
+// one that already has remoteUrl is left alone. An origin with a different
+// URL is updated after confirmation, or without asking when Force is set.
 func (r *RepoService) CreateRemote(remoteUrl string) error {
-	return console.Run("Configuring remote", func() error {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	status, current, err := gitops.InspectRemote(cwd, "origin", remoteUrl)
+	if err != nil {
+		return err
+	}
+
+	switch status {
+	case gitops.RemoteMatches:
+		console.Info(fmt.Sprintf("Remote origin already points to %s", remoteUrl))
+		return nil
+	case gitops.RemoteDiffers:
+		if !r.Force {
+			// Prompt outside the spinner so the question is readable.
+			ok, err := r.confirmRemoteUpdate(current, remoteUrl)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return gerrors.NewHint(
+					fmt.Sprintf("remote origin points to %s, not %s; it was left unchanged", current, remoteUrl),
+					fmt.Sprintf("update it with: git remote set-url origin %s (or rerun with --force)", remoteUrl), nil)
+			}
 		}
-		return gitops.AddRemote(cwd, "origin", remoteUrl)
-	})
+		return console.Run("Updating remote origin", func() error {
+			return gitops.SetRemoteURL(cwd, "origin", remoteUrl)
+		})
+	default:
+		return console.Run("Configuring remote", func() error {
+			return gitops.AddRemote(cwd, "origin", remoteUrl)
+		})
+	}
+}
+
+func (r *RepoService) confirmRemoteUpdate(current, url string) (bool, error) {
+	if r.ConfirmRemoteUpdate == nil {
+		return prompts.AskToUpdateRemote("origin", current, url, r.Accessibility)
+	}
+	return r.ConfirmRemoteUpdate(current, url)
 }
 
 // PushToRemote prompts the user, then runs `git push --set-upstream origin <branch>`

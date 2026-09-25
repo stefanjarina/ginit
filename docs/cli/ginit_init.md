@@ -9,7 +9,7 @@ ginit init [flags]
 ### Options
 
 ```
-  -f, --force         Force init even if a git repository already exists
+  -f, --force         Replace an existing git repository and update an existing origin without asking
   -h, --help          help for init
       --only-push     Only push the existing local repository to its configured origin; do not create a remote repository
       --only-remote   Only create the remote repository and print its clone URL; do not touch the local directory
