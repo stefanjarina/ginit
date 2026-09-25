@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -48,6 +49,7 @@ type fakeSteps struct {
 	before     func(pi *service.ProjectInfo) error
 	prepareErr error
 	commitErr  error
+	createErr  error
 }
 
 func (f *fakeSteps) PrepareLocalGit(string) error {
@@ -68,6 +70,9 @@ func (f *fakeSteps) CreateRemoteRepo(provider string) (*service.ProjectInfo, err
 		if err := f.before(pi); err != nil {
 			return nil, err
 		}
+	}
+	if f.createErr != nil {
+		return nil, f.createErr
 	}
 	f.calls = append(f.calls, "CreateRemoteRepo:"+provider)
 	return pi, nil
@@ -220,6 +225,27 @@ func TestFullInitLocalFailureCreatesNoRemote(t *testing.T) {
 	}
 	if !g.removed {
 		t.Error(".git should be removed after a failed local prepare")
+	}
+}
+
+func TestFullInitRemoteFailureKeepsLocalCommit(t *testing.T) {
+	svc := &fakeSteps{createErr: errors.New("name already exists")}
+	g := &fakeGit{}
+
+	err := newRunner(svc, g, &bytes.Buffer{}).run("github", modeFull)
+	var se *stepError
+	if !errors.As(err, &se) || se.step != "create remote repo" {
+		t.Fatalf("expected create remote repo error, got %v", err)
+	}
+	if !strings.Contains(se.warning, "No remote repository was created") ||
+		!strings.Contains(se.warning, "initial commit were kept") {
+		t.Errorf("warning should say the remote was not created and the commit was kept, got %q", se.warning)
+	}
+	if !slices.Contains(svc.calls, "CommitLocalGit") {
+		t.Fatalf("expected the initial commit before the create call, calls: %v", svc.calls)
+	}
+	if g.removed {
+		t.Error(".git should be kept when the remote create fails after a successful commit")
 	}
 }
 
