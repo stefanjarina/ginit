@@ -6,17 +6,19 @@ ginit-config-set - Set a configuration key to a value
 
 
 .SH SYNOPSIS
-\fBginit config set (defaultbranch  | protocol ssh|https |   ) [flags]\fP
+\fBginit config set (default_branch  | protocol ssh|https |   ) [flags]\fP
 
 
 .SH DESCRIPTION
 Set a configuration key to a value.
 
 .PP
-Use "defaultbranch " to set the branch that git init uses.
+Use "default_branch " to set the branch that git init uses.
 Use "protocol ssh" or "protocol https" to choose the clone URL used for origin
 in every provider. Unset, it is ssh except on Windows, where it is https.
-Otherwise set  on  (token, baseurl, or a provider option).
+Otherwise set  on  (token, base_url, or a provider option such as
+org_name). Keys are stored in snake_case and match regardless of case,
+so "OrgName", "orgname" and "org_name" name the same key.
 
 
 .SH OPTIONS
@@ -43,7 +45,7 @@ Otherwise set  on  (token, baseurl, or a provider option).
 
 .SH EXAMPLE
 .EX
-  ginit config set defaultbranch trunk
+  ginit config set default_branch trunk
   ginit config set protocol https
   ginit config set github token <token>
 .EE

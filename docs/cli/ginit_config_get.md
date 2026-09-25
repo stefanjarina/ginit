@@ -10,15 +10,15 @@ Get value of a configuration key.
 default when it is not set.
 
 ```
-ginit config get (defaultbranch | protocol | <provider> <key>) [flags]
+ginit config get (default_branch | protocol | <provider> <key>) [flags]
 ```
 
 ### Examples
 
 ```
-  ginit config get defaultbranch
+  ginit config get default_branch
   ginit config get protocol
-  ginit config get github baseurl
+  ginit config get github base_url
 ```
 
 ### Options

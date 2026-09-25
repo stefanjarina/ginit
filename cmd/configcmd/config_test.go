@@ -59,32 +59,32 @@ func TestConfigDefaultBranch(t *testing.T) {
 	config.Current = &config.Config{DefaultBranch: "main", Providers: []config.Provider{{Name: "github", Options: map[string]string{}}}}
 	config.CurrentPath = filepath.Join(t.TempDir(), "ginit.yaml")
 
-	if _, err := executeConfig("set", "defaultbranch", "trunk"); err != nil {
-		t.Fatalf("config set defaultbranch error = %v", err)
+	if _, err := executeConfig("set", "default_branch", "trunk"); err != nil {
+		t.Fatalf("config set default_branch error = %v", err)
 	}
 	loaded, err := config.Load(config.CurrentPath)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
 	if loaded.DefaultBranch != "trunk" {
-		t.Fatalf("saved defaultbranch = %q, want trunk", loaded.DefaultBranch)
+		t.Fatalf("saved default_branch = %q, want trunk", loaded.DefaultBranch)
 	}
 
-	out, err := executeConfig("get", "defaultbranch")
+	out, err := executeConfig("get", "default_branch")
 	if err != nil {
-		t.Fatalf("config get defaultbranch error = %v", err)
+		t.Fatalf("config get default_branch error = %v", err)
 	}
 	if strings.TrimSpace(out) != "trunk" {
-		t.Fatalf("config get defaultbranch output = %q, want trunk", out)
+		t.Fatalf("config get default_branch output = %q, want trunk", out)
 	}
 
 	rejected := [][]string{
-		{"set", "defaultbranch", ""},
-		{"set", "defaultbranch", "  "},
-		{"set", "defaultbranch"},
-		{"set", "defaultbranch", "a", "b"},
-		{"get", "defaultbranch", "extra"},
-		{"remove", "defaultbranch"},
+		{"set", "default_branch", ""},
+		{"set", "default_branch", "  "},
+		{"set", "default_branch"},
+		{"set", "default_branch", "a", "b"},
+		{"get", "default_branch", "extra"},
+		{"remove", "default_branch"},
 	}
 	for _, args := range rejected {
 		if _, err := executeConfig(args...); err == nil {
@@ -92,7 +92,7 @@ func TestConfigDefaultBranch(t *testing.T) {
 		}
 	}
 	if config.Current.DefaultBranch != "trunk" {
-		t.Fatalf("defaultbranch after rejected commands = %q, want trunk", config.Current.DefaultBranch)
+		t.Fatalf("default_branch after rejected commands = %q, want trunk", config.Current.DefaultBranch)
 	}
 }
 
@@ -115,7 +115,7 @@ func TestConfigAllOptionalProvider(t *testing.T) {
 	config.Current = &config.Config{
 		DefaultBranch: "main",
 		Providers: []config.Provider{
-			{Name: "azure", Token: "azure-token", BaseUrl: "https://dev.azure.com", Options: map[string]string{"OrgName": "contoso"}},
+			{Name: "azure", Token: "azure-token", BaseUrl: "https://dev.azure.com", Options: map[string]string{"org_name": "contoso"}},
 			{Name: "github", Token: "github-token", BaseUrl: "https://github.com", Options: map[string]string{}},
 		},
 	}
@@ -125,7 +125,7 @@ func TestConfigAllOptionalProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config all error = %v", err)
 	}
-	if !strings.Contains(out, "defaultbranch: main") || !strings.Contains(out, "name: azure") || !strings.Contains(out, "name: github") {
+	if !strings.Contains(out, "default_branch: main") || !strings.Contains(out, "name: azure") || !strings.Contains(out, "name: github") {
 		t.Fatalf("config all output missing full config fields:\n%s", out)
 	}
 
@@ -133,7 +133,7 @@ func TestConfigAllOptionalProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config all azure error = %v", err)
 	}
-	if !strings.Contains(out, "name: azure") || !strings.Contains(out, "OrgName: contoso") || strings.Contains(out, "name: github") || strings.Contains(out, "defaultbranch:") {
+	if !strings.Contains(out, "name: azure") || !strings.Contains(out, "org_name: contoso") || strings.Contains(out, "name: github") || strings.Contains(out, "default_branch:") {
 		t.Fatalf("config all azure output did not isolate provider:\n%s", out)
 	}
 
@@ -252,5 +252,25 @@ func TestConfigProtocol(t *testing.T) {
 	}
 	if config.Current.Protocol != "" {
 		t.Fatalf("protocol after remove = %q, want empty", config.Current.Protocol)
+	}
+}
+
+func TestConfigSetOptionKeyIgnoresCase(t *testing.T) {
+	config.Current = &config.Config{DefaultBranch: "main", Providers: []config.Provider{{Name: "azure", Options: map[string]string{}}}}
+	config.CurrentPath = filepath.Join(t.TempDir(), "ginit.yaml")
+
+	if _, err := executeConfig("set", "azure", "orgname", "contoso"); err != nil {
+		t.Fatalf("config set azure orgname error = %v", err)
+	}
+	loaded, err := config.Load(config.CurrentPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := loaded.GetValue("azure", config.OrgNameKey); got != "contoso" {
+		t.Fatalf("saved org_name = %q, want contoso", got)
+	}
+	out, err := executeConfig("get", "azure", "OrgName")
+	if err != nil || strings.TrimSpace(out) != "contoso" {
+		t.Fatalf("config get azure OrgName = %q, %v, want contoso", out, err)
 	}
 }

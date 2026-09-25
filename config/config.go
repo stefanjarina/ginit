@@ -12,14 +12,14 @@ import (
 )
 
 type Config struct {
-	DefaultBranch string `yaml:"defaultbranch"`
+	DefaultBranch string `yaml:"default_branch"`
 	// Protocol selects the clone URL used for origin: "ssh" or "https".
 	// Empty means the platform default, see DefaultProtocol.
 	Protocol string `yaml:"protocol,omitempty"`
 	// SecretPatterns lists the file patterns that make init ask before the
 	// initial commit. Empty means DefaultSecretPatterns, see
 	// EffectiveSecretPatterns.
-	SecretPatterns []string   `yaml:"secretpatterns,omitempty"`
+	SecretPatterns []string   `yaml:"secret_patterns,omitempty"`
 	Providers      []Provider `yaml:"providers"`
 }
 
@@ -49,10 +49,11 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &c); err != nil {
 		return nil, gerrors.New(fmt.Sprintf("parse config %s", path), err)
 	}
+	if err := checkLegacyKeys(data); err != nil {
+		return nil, gerrors.NewHint(fmt.Sprintf("config %s: %v", path, err), "rename the keys to snake_case", nil)
+	}
 	for i := range c.Providers {
-		if c.Providers[i].Options == nil {
-			c.Providers[i].Options = map[string]string{}
-		}
+		c.Providers[i].Options = canonicalOptions(c.Providers[i].Options)
 	}
 	return &c, nil
 }
@@ -95,40 +96,42 @@ func (c *Config) GetProvider(name string) *Provider {
 	return nil
 }
 
-// special-cases "token" and "baseurl"; everything else lives in Options.
+// GetValue reads key from provider. "token" and "base_url" are fields of the
+// provider; everything else lives in Options. Keys match as described in
+// CanonicalKey, so "OrgName", "orgname" and "org_name" are the same key.
 func (c *Config) GetValue(provider, key string) string {
 	p := c.GetProvider(provider)
 	if p == nil {
 		return ""
 	}
-	switch strings.ToLower(key) {
-	case "token":
+	switch CanonicalKey(key) {
+	case TokenKey:
 		return p.Token
-	case "baseurl":
+	case BaseUrlKey:
 		return p.BaseUrl
 	default:
-		if p.Options == nil {
-			return ""
-		}
-		return p.Options[key]
+		return p.Options[CanonicalKey(key)]
 	}
 }
 
+// SetValue stores value under the canonical form of key.
 func (c *Config) SetValue(provider, key, value string) error {
 	p := c.GetProvider(provider)
 	if p == nil {
 		return fmt.Errorf("unknown provider: %s", provider)
 	}
-	switch strings.ToLower(key) {
-	case "token":
+	switch k := CanonicalKey(key); k {
+	case "":
+		return fmt.Errorf("key must not be empty")
+	case TokenKey:
 		p.Token = value
-	case "baseurl":
+	case BaseUrlKey:
 		p.BaseUrl = value
 	default:
 		if p.Options == nil {
 			p.Options = map[string]string{}
 		}
-		p.Options[key] = value
+		p.Options[k] = value
 	}
 	return nil
 }
@@ -138,27 +141,27 @@ func (c *Config) RemoveValue(provider, key string) error {
 	if p == nil {
 		return fmt.Errorf("unknown provider: %s", provider)
 	}
-	switch strings.ToLower(key) {
-	case "token":
+	switch k := CanonicalKey(key); k {
+	case TokenKey:
 		p.Token = ""
-	case "baseurl":
+	case BaseUrlKey:
 		p.BaseUrl = ""
 	default:
-		delete(p.Options, key)
+		delete(p.Options, k)
 	}
 	return nil
 }
 
 // DefaultBranchKey is the config command key for the top-level branch that
 // `git init -b` uses. It is addressed without a provider.
-const DefaultBranchKey = "defaultbranch"
+const DefaultBranchKey = "default_branch"
 
 // IsDefaultBranchKey reports whether key names the top-level default branch.
 func IsDefaultBranchKey(key string) bool {
-	return strings.EqualFold(key, DefaultBranchKey)
+	return CanonicalKey(key) == DefaultBranchKey
 }
 
-// FallbackDefaultBranch is the branch used when defaultbranch is not set.
+// FallbackDefaultBranch is the branch used when default_branch is not set.
 const FallbackDefaultBranch = "main"
 
 // EffectiveDefaultBranch returns the configured default branch, or
@@ -190,7 +193,7 @@ const (
 
 // IsProtocolKey reports whether key names the top-level clone URL protocol.
 func IsProtocolKey(key string) bool {
-	return strings.EqualFold(key, ProtocolKey)
+	return CanonicalKey(key) == ProtocolKey
 }
 
 // DefaultProtocol is used when protocol is not set: SSH everywhere except
