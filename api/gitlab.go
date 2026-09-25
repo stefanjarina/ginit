@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"runtime"
 	"strings"
 	"time"
 
@@ -108,8 +107,8 @@ func (gc *GitlabClient) GetGroups(visibility string) ([]GitlabGroup, error) {
 }
 
 // CreateRepository creates the project under the given namespace and returns
-// the SSH URL on Unix (HTTPS on Windows).
-func (gc *GitlabClient) CreateRepository(namespaceId int, name, description, visibility string) (string, error) {
+// its clone URLs.
+func (gc *GitlabClient) CreateRepository(namespaceId int, name, description, visibility string) (CloneURLs, error) {
 	body := map[string]any{
 		"name":         name,
 		"description":  description,
@@ -118,12 +117,9 @@ func (gc *GitlabClient) CreateRepository(namespaceId int, name, description, vis
 	}
 	var resp gitlabProjectResponse
 	if err := gc.post("projects", body, &resp); err != nil {
-		return "", gerrors.NewProvider("gitlab", "create repository", err)
+		return CloneURLs{}, gerrors.NewProvider("gitlab", "create repository", err)
 	}
-	if runtime.GOOS == "windows" {
-		return resp.HttpUrlToRepo, nil
-	}
-	return resp.SshUrlToRepo, nil
+	return CloneURLs{SSH: resp.SshUrlToRepo, HTTPS: resp.HttpUrlToRepo}, nil
 }
 
 // ----- HTTP helpers -----

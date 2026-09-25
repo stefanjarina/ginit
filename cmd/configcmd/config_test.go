@@ -209,3 +209,48 @@ func executeConfig(args ...string) (string, error) {
 	out, _ := io.ReadAll(r)
 	return string(out), err
 }
+
+func TestConfigProtocol(t *testing.T) {
+	config.Current = &config.Config{DefaultBranch: "main", Providers: []config.Provider{{Name: "github", Options: map[string]string{}}}}
+	config.CurrentPath = filepath.Join(t.TempDir(), "ginit.yaml")
+
+	out, err := executeConfig("get", "protocol")
+	if err != nil {
+		t.Fatalf("config get protocol error = %v", err)
+	}
+	if strings.TrimSpace(out) != config.DefaultProtocol() {
+		t.Fatalf("unset protocol = %q, want platform default %q", out, config.DefaultProtocol())
+	}
+
+	if _, err := executeConfig("set", "protocol", "HTTPS"); err != nil {
+		t.Fatalf("config set protocol error = %v", err)
+	}
+	loaded, err := config.Load(config.CurrentPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if loaded.Protocol != "https" {
+		t.Fatalf("saved protocol = %q, want https", loaded.Protocol)
+	}
+
+	for _, args := range [][]string{
+		{"set", "protocol", "git"},
+		{"set", "protocol"},
+		{"get", "protocol", "extra"},
+		{"remove", "protocol", "extra"},
+	} {
+		if _, err := executeConfig(args...); err == nil {
+			t.Fatalf("config %v error = nil, want error", args)
+		}
+	}
+	if config.Current.Protocol != "https" {
+		t.Fatalf("protocol after rejected commands = %q, want https", config.Current.Protocol)
+	}
+
+	if _, err := executeConfig("remove", "protocol"); err != nil {
+		t.Fatalf("config remove protocol error = %v", err)
+	}
+	if config.Current.Protocol != "" {
+		t.Fatalf("protocol after remove = %q, want empty", config.Current.Protocol)
+	}
+}

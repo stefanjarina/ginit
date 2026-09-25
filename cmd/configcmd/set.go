@@ -9,13 +9,16 @@ import (
 )
 
 var setCmd = &cobra.Command{
-	Use:   "set (defaultbranch <branch> | <provider> <key> <value>)",
+	Use:   "set (defaultbranch <branch> | protocol ssh|https | <provider> <key> <value>)",
 	Short: "Set a configuration key to a value",
 	Long: `Set a configuration key to a value.
 
 Use "defaultbranch <branch>" to set the branch that git init uses.
+Use "protocol ssh" or "protocol https" to choose the clone URL used for origin
+in every provider. Unset, it is ssh except on Windows, where it is https.
 Otherwise set <key> on <provider> (token, baseurl, or a provider option).`,
 	Example: `  ginit config set defaultbranch trunk
+  ginit config set protocol https
   ginit config set github token <token>`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 0 && config.IsDefaultBranchKey(args[0]) {
@@ -25,13 +28,22 @@ Otherwise set <key> on <provider> (token, baseurl, or a provider option).`,
 			// Reject an empty branch before touching the loaded config.
 			return (&config.Config{}).SetDefaultBranch(args[1])
 		}
+		if len(args) > 0 && config.IsProtocolKey(args[0]) {
+			if err := cobra.ExactArgs(2)(cmd, args); err != nil {
+				return err
+			}
+			return (&config.Config{}).SetProtocol(args[1])
+		}
 		return cobra.ExactArgs(3)(cmd, args)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		var err error
-		if config.IsDefaultBranchKey(args[0]) {
+		switch {
+		case config.IsDefaultBranchKey(args[0]):
 			err = config.Current.SetDefaultBranch(args[1])
-		} else {
+		case config.IsProtocolKey(args[0]):
+			err = config.Current.SetProtocol(args[1])
+		default:
 			err = config.Current.SetValue(args[0], args[1], args[2])
 		}
 		if err != nil {

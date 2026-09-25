@@ -2,14 +2,22 @@
 
 Get value of a configuration key
 
+### Synopsis
+
+Get value of a configuration key.
+
+"protocol" prints the effective clone URL protocol, including the platform
+default when it is not set.
+
 ```
-ginit config get (defaultbranch | <provider> <key>) [flags]
+ginit config get (defaultbranch | protocol | <provider> <key>) [flags]
 ```
 
 ### Examples
 
 ```
   ginit config get defaultbranch
+  ginit config get protocol
   ginit config get github baseurl
 ```
 

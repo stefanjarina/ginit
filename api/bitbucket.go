@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"runtime"
 	"strings"
 	"time"
 
@@ -124,7 +123,8 @@ func (bc *BitbucketClient) GetProjects(workspace string) ([]BitbucketProject, er
 	return projects, nil
 }
 
-func (bc *BitbucketClient) CreateRepository(workspace, projectKey, name, description, visibility string) (string, error) {
+// CreateRepository creates the repository and returns its clone URLs.
+func (bc *BitbucketClient) CreateRepository(workspace, projectKey, name, description, visibility string) (CloneURLs, error) {
 	body := map[string]any{
 		"scm":         "git",
 		"name":        name,
@@ -137,9 +137,9 @@ func (bc *BitbucketClient) CreateRepository(workspace, projectKey, name, descrip
 	path := "repositories/" + url.PathEscape(workspace) + "/" + url.PathEscape(BitbucketSlug(name))
 	var resp bitbucketRepoResponse
 	if err := bc.post(path, body, &resp); err != nil {
-		return "", gerrors.NewProvider("bitbucket", "create repository", err)
+		return CloneURLs{}, gerrors.NewProvider("bitbucket", "create repository", err)
 	}
-	return pickCloneURL(resp.Links.Clone)
+	return cloneURLs(resp.Links.Clone), nil
 }
 
 // BitbucketSlug turns a repository name into the slug Bitbucket expects in
@@ -221,25 +221,18 @@ func (bc *BitbucketClient) do(method, pathAndQuery string, body, out any) error 
 	return json.Unmarshal(rb, out)
 }
 
-func pickCloneURL(clones []struct {
+func cloneURLs(clones []struct {
 	Name string `json:"name"`
 	Href string `json:"href"`
-}) (string, error) {
-	preferred := "ssh"
-	if runtime.GOOS == "windows" {
-		preferred = "https"
-	}
-	var fallback string
+}) CloneURLs {
+	var urls CloneURLs
 	for _, clone := range clones {
-		if clone.Name == preferred {
-			return clone.Href, nil
-		}
-		if fallback == "" {
-			fallback = clone.Href
+		switch clone.Name {
+		case "ssh":
+			urls.SSH = clone.Href
+		case "https":
+			urls.HTTPS = clone.Href
 		}
 	}
-	if fallback != "" {
-		return fallback, nil
-	}
-	return "", gerrors.NewProvider("bitbucket", "created repo has no URL", nil)
+	return urls
 }

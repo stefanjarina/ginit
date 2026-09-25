@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"runtime"
 	"testing"
 )
 
@@ -45,16 +44,13 @@ func TestGiteaClientOwnersAndCreateBody(t *testing.T) {
 		t.Fatalf("owners = %#v", owners)
 	}
 
-	remoteURL, err := client.CreateRepository(owners[1], "demo", "description", "private")
+	remoteURLs, err := client.CreateRepository(owners[1], "demo", "description", "private")
 	if err != nil {
 		t.Fatalf("CreateRepository() error = %v", err)
 	}
-	wantURL := "git@gitea.example.com:team/demo.git"
-	if runtime.GOOS == "windows" {
-		wantURL = "https://gitea.example.com/team/demo.git"
-	}
-	if remoteURL != wantURL {
-		t.Fatalf("remoteURL = %q, want %q", remoteURL, wantURL)
+	wantURLs := CloneURLs{SSH: "git@gitea.example.com:team/demo.git", HTTPS: "https://gitea.example.com/team/demo.git"}
+	if remoteURLs != wantURLs {
+		t.Fatalf("clone URLs = %#v, want %#v", remoteURLs, wantURLs)
 	}
 	if createBody["name"] != "demo" || createBody["description"] != "description" || createBody["private"] != true {
 		t.Fatalf("create body = %#v", createBody)
