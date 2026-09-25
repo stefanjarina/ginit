@@ -192,13 +192,19 @@ func AskToKeepExistingGitignore(accessibility bool) (bool, error) {
 	return keep, nil
 }
 
-// AskToDeleteCurrentLocalRepo asks whether to wipe an existing .git directory.
-func AskToDeleteCurrentLocalRepo(accessibility bool) (bool, error) {
+// AskToDeleteCurrentLocalRepo asks whether to wipe an existing .git entry.
+// isFile marks a .git file, which links a worktree or submodule to its
+// repository; deleting it breaks that link.
+func AskToDeleteCurrentLocalRepo(isFile, accessibility bool) (bool, error) {
+	title := "Existing .git directory found. Delete it and start over?"
+	if isFile {
+		title = "Existing .git file found: this directory is a linked worktree or submodule. Delete the file (unlinking it from its repository) and start over?"
+	}
 	confirm := false
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewConfirm().
-				Title("Existing .git directory found. Delete it and start over?").
+				Title(title).
 				Affirmative("Yes").Negative("No").Value(&confirm),
 		),
 	)

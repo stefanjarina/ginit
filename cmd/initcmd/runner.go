@@ -53,11 +53,11 @@ type runner struct {
 	force      bool
 	accessible bool
 
-	hasGitDir    func(dir string) bool
+	findGit      func(dir string) gitops.GitEntry
 	removeGitDir func(dir string) error
 	isRepository func(dir string) bool
 	remoteURL    func(dir, name string) (string, error)
-	askDelete    func(accessible bool) (bool, error)
+	askDelete    func(isFile, accessible bool) (bool, error)
 }
 
 // stepError names the step that failed; the name is what the user sees.
@@ -118,7 +118,7 @@ func runProvider(cmd *cobra.Command, provider string) {
 		out:          os.Stdout,
 		force:        flagForce,
 		accessible:   accessible,
-		hasGitDir:    gitops.HasGitDir,
+		findGit:      gitops.FindGit,
 		removeGitDir: gitops.RemoveGitDir,
 		isRepository: gitops.IsRepository,
 		remoteURL:    gitops.RemoteURL,
@@ -179,10 +179,12 @@ func (r *runner) onlyPush() error {
 // full initializes local git, writes .gitignore and commits before the remote
 // is created, then configures origin and pushes.
 func (r *runner) full(provider string) error {
-	if r.hasGitDir(r.dir) {
+	// A .git file (linked worktree or submodule) counts as an existing
+	// repository too: it is removed only once the user has agreed.
+	if entry := r.findGit(r.dir); entry != gitops.GitNone {
 		remove := r.force
 		if !remove {
-			ok, err := r.askDelete(r.accessible)
+			ok, err := r.askDelete(entry == gitops.GitFile, r.accessible)
 			if err != nil {
 				return fail("prompt", err)
 			}
@@ -197,9 +199,19 @@ func (r *runner) full(provider string) error {
 		}
 	}
 
+	// Any .git present from here on was created by this run, so the failure
+	// paths below may remove it. Check again rather than assume: if something
+	// is still there, it is not ours to delete.
+	owned := r.findGit(r.dir) == gitops.GitNone
+	cleanup := func() {
+		if owned {
+			_ = r.removeGitDir(r.dir)
+		}
+	}
+
 	// Local git init + identity check, before any prompt or provider call.
 	if err := r.svc.PrepareLocalGit(r.dir); err != nil {
-		_ = r.removeGitDir(r.dir)
+		cleanup()
 		return fail("initialize local git", err)
 	}
 
@@ -213,7 +225,7 @@ func (r *runner) full(provider string) error {
 
 	pi, err := r.svc.CreateRemoteRepo(provider)
 	if err != nil {
-		_ = r.removeGitDir(r.dir)
+		cleanup()
 		if localErr != nil {
 			return &stepError{step: "prepare local repository", err: err, warning: "No remote repository was created."}
 		}

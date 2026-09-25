@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/stefanjarina/ginit/config"
+	"github.com/stefanjarina/ginit/gitops"
 	"github.com/stefanjarina/ginit/service"
 )
 
@@ -42,15 +43,16 @@ func TestPrepareBeforeCreateRefusesEmptyTree(t *testing.T) {
 
 // fakeSteps records which service steps ran; nothing touches the network.
 type fakeSteps struct {
-	calls     []string
-	remoteTo  string
-	before    func(pi *service.ProjectInfo) error
-	commitErr error
+	calls      []string
+	remoteTo   string
+	before     func(pi *service.ProjectInfo) error
+	prepareErr error
+	commitErr  error
 }
 
 func (f *fakeSteps) PrepareLocalGit(string) error {
 	f.calls = append(f.calls, "PrepareLocalGit")
-	return nil
+	return f.prepareErr
 }
 
 func (f *fakeSteps) CommitLocalGit(string) error {
@@ -93,10 +95,10 @@ func (f *fakeSteps) PushInitialBranch() error {
 }
 
 type fakeGit struct {
-	hasGitDir bool
-	isRepo    bool
-	origin    string // empty means no origin configured
-	removed   bool
+	entry   gitops.GitEntry
+	isRepo  bool
+	origin  string // empty means no origin configured
+	removed bool
 }
 
 func newRunner(svc initSteps, g *fakeGit, out *bytes.Buffer) *runner {
@@ -105,8 +107,8 @@ func newRunner(svc initSteps, g *fakeGit, out *bytes.Buffer) *runner {
 		dir:          "/work/demo",
 		out:          out,
 		force:        true,
-		hasGitDir:    func(string) bool { return g.hasGitDir },
-		removeGitDir: func(string) error { g.removed = true; return nil },
+		findGit:      func(string) gitops.GitEntry { return g.entry },
+		removeGitDir: func(string) error { g.removed = true; g.entry = gitops.GitNone; return nil },
 		isRepository: func(string) bool { return g.isRepo },
 		remoteURL: func(_, name string) (string, error) {
 			if name != "origin" || g.origin == "" {
@@ -114,14 +116,17 @@ func newRunner(svc initSteps, g *fakeGit, out *bytes.Buffer) *runner {
 			}
 			return g.origin, nil
 		},
-		askDelete: func(bool) (bool, error) { return true, nil },
+		askDelete: func(bool, bool) (bool, error) { return true, nil },
 	}
 }
 
 func TestOnlyRemoteCreatesRepoAndPrintsCloneURL(t *testing.T) {
 	for _, hasGit := range []bool{false, true} {
 		svc := &fakeSteps{}
-		g := &fakeGit{hasGitDir: hasGit, isRepo: hasGit}
+		g := &fakeGit{isRepo: hasGit}
+		if hasGit {
+			g.entry = gitops.GitDirectory
+		}
 		var out bytes.Buffer
 
 		if err := newRunner(svc, g, &out).run("github", modeOnlyRemote); err != nil {
@@ -141,7 +146,7 @@ func TestOnlyRemoteCreatesRepoAndPrintsCloneURL(t *testing.T) {
 
 func TestOnlyPushPushesExistingRepoWithOrigin(t *testing.T) {
 	svc := &fakeSteps{}
-	g := &fakeGit{hasGitDir: true, isRepo: true, origin: "git@example.com:me/demo.git"}
+	g := &fakeGit{entry: gitops.GitDirectory, isRepo: true, origin: "git@example.com:me/demo.git"}
 
 	if err := newRunner(svc, g, &bytes.Buffer{}).run("github", modeOnlyPush); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -169,7 +174,7 @@ func TestOnlyPushRequiresRepository(t *testing.T) {
 
 func TestOnlyPushRequiresOrigin(t *testing.T) {
 	svc := &fakeSteps{}
-	g := &fakeGit{hasGitDir: true, isRepo: true}
+	g := &fakeGit{entry: gitops.GitDirectory, isRepo: true}
 
 	err := newRunner(svc, g, &bytes.Buffer{}).run("github", modeOnlyPush)
 	if err == nil || !strings.Contains(err.Error(), "origin") {
@@ -182,7 +187,7 @@ func TestOnlyPushRequiresOrigin(t *testing.T) {
 
 func TestFullInitRunsEveryStep(t *testing.T) {
 	svc := &fakeSteps{}
-	g := &fakeGit{hasGitDir: true}
+	g := &fakeGit{entry: gitops.GitDirectory}
 
 	if err := newRunner(svc, g, &bytes.Buffer{}).run("gitlab", modeFull); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -215,5 +220,86 @@ func TestFullInitLocalFailureCreatesNoRemote(t *testing.T) {
 	}
 	if !g.removed {
 		t.Error(".git should be removed after a failed local prepare")
+	}
+}
+
+// writeGitFile makes dir look like a linked worktree: .git is a file pointing
+// at a git directory that does not exist, so git commands in dir fail.
+func writeGitFile(t *testing.T, dir string) string {
+	t.Helper()
+	p := filepath.Join(dir, ".git")
+	if err := os.WriteFile(p, []byte("gitdir: /nonexistent/.git/worktrees/demo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestFullInitAsksBeforeReplacingGitFile(t *testing.T) {
+	dir := t.TempDir()
+	gitFile := writeGitFile(t, dir)
+	svc := &fakeSteps{}
+	var askedFile, asked bool
+
+	r := newRunner(svc, &fakeGit{}, &bytes.Buffer{})
+	r.dir = dir
+	r.force = false
+	r.findGit = gitops.FindGit
+	r.removeGitDir = gitops.RemoveGitDir
+	r.askDelete = func(isFile, _ bool) (bool, error) {
+		asked, askedFile = true, isFile
+		return false, nil
+	}
+
+	if err := r.run("github", modeFull); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !asked || !askedFile {
+		t.Fatalf("expected a prompt about a .git file, asked=%v isFile=%v", asked, askedFile)
+	}
+	if len(svc.calls) != 0 {
+		t.Errorf("no step should run after the user declines, got %v", svc.calls)
+	}
+	if _, err := os.Stat(gitFile); err != nil {
+		t.Errorf(".git file should still exist: %v", err)
+	}
+}
+
+func TestFullInitFailureKeepsGitItDidNotCreate(t *testing.T) {
+	dir := t.TempDir()
+	gitFile := writeGitFile(t, dir)
+	svc := &fakeSteps{prepareErr: errors.New("fatal: not a git repository")}
+
+	// The user agrees, but the .git file survives removal; the failed init
+	// must not delete it afterwards, since this run did not create it.
+	r := newRunner(svc, &fakeGit{}, &bytes.Buffer{})
+	r.dir = dir
+	r.findGit = gitops.FindGit
+	removals := 0
+	r.removeGitDir = func(string) error { removals++; return nil }
+
+	err := r.run("github", modeFull)
+	var se *stepError
+	if !errors.As(err, &se) || se.step != "initialize local git" {
+		t.Fatalf("expected initialize local git error, got %v", err)
+	}
+	if removals != 1 {
+		t.Errorf("removeGitDir called %d times, want 1 (the confirmed replacement only)", removals)
+	}
+	if _, err := os.Stat(gitFile); err != nil {
+		t.Errorf(".git file should still exist: %v", err)
+	}
+}
+
+func TestFullInitFailureRemovesGitItCreated(t *testing.T) {
+	svc := &fakeSteps{prepareErr: errors.New("identity missing")}
+	g := &fakeGit{}
+
+	err := newRunner(svc, g, &bytes.Buffer{}).run("github", modeFull)
+	var se *stepError
+	if !errors.As(err, &se) || se.step != "initialize local git" {
+		t.Fatalf("expected initialize local git error, got %v", err)
+	}
+	if !g.removed {
+		t.Error(".git created by this run should be removed after a failed init")
 	}
 }
