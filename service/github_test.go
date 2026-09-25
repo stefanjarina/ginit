@@ -10,13 +10,16 @@ import (
 
 type fakeGithubOwners struct {
 	owners    []api.GithubOwner
+	skipped   []api.SkippedGithubOrg
 	ownersErr error
 	user      api.GithubOwner
 	userErr   error
 }
 
-func (f *fakeGithubOwners) GetOwners() ([]api.GithubOwner, error) { return f.owners, f.ownersErr }
-func (f *fakeGithubOwners) UserOwner() (api.GithubOwner, error)   { return f.user, f.userErr }
+func (f *fakeGithubOwners) GetOwners() ([]api.GithubOwner, []api.SkippedGithubOrg, error) {
+	return f.owners, f.skipped, f.ownersErr
+}
+func (f *fakeGithubOwners) UserOwner() (api.GithubOwner, error) { return f.user, f.userErr }
 
 func TestGithubOwners(t *testing.T) {
 	user := api.GithubOwner{Login: "alice", Visibilities: []string{"private", "public"}}
@@ -25,6 +28,15 @@ func TestGithubOwners(t *testing.T) {
 	got, err := githubOwners(&fakeGithubOwners{owners: []api.GithubOwner{user, org}})
 	if err != nil || !reflect.DeepEqual(got, []api.GithubOwner{user, org}) {
 		t.Errorf("githubOwners() = %#v, %v, want user and org", got, err)
+	}
+
+	// An organization whose settings could not be read is skipped, not fatal.
+	got, err = githubOwners(&fakeGithubOwners{
+		owners:  []api.GithubOwner{user, org},
+		skipped: []api.SkippedGithubOrg{{Login: "hidden", Err: errors.New("403")}},
+	})
+	if err != nil || !reflect.DeepEqual(got, []api.GithubOwner{user, org}) {
+		t.Errorf("githubOwners() with skipped org = %#v, %v, want user and org", got, err)
 	}
 
 	// A token that cannot list organizations still creates user repositories.

@@ -447,15 +447,20 @@ func (r *RepoService) handleGithub() (*ProjectInfo, error) {
 
 // githubOwners lists the accounts a GitHub repository can be created under.
 // When the organizations cannot be listed (for example the token lacks the
-// read:org scope) it warns and offers only the authenticated user.
+// read:org scope) it warns and offers only the authenticated user. An
+// organization whose settings cannot be read is skipped with a warning.
 func githubOwners(client githubOwnerLister) ([]api.GithubOwner, error) {
 	var owners []api.GithubOwner
+	var skipped []api.SkippedGithubOrg
 	err := console.RunOptional("Fetching GitHub organizations", func() error {
-		o, e := client.GetOwners()
-		owners = o
+		o, s, e := client.GetOwners()
+		owners, skipped = o, s
 		return e
 	})
 	if err == nil {
+		for _, s := range skipped {
+			console.Warning(fmt.Sprintf("Skipping GitHub organization %s: cannot read its settings: %v", s.Login, s.Err))
+		}
 		return owners, nil
 	}
 	console.Warning("Continuing with your user account only")
@@ -467,7 +472,7 @@ func githubOwners(client githubOwnerLister) ([]api.GithubOwner, error) {
 }
 
 type githubOwnerLister interface {
-	GetOwners() ([]api.GithubOwner, error)
+	GetOwners() ([]api.GithubOwner, []api.SkippedGithubOrg, error)
 	UserOwner() (api.GithubOwner, error)
 }
 
