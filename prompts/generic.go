@@ -48,8 +48,9 @@ func VisibilityChoices(repository string) []string {
 // and the init flow. availableTypes is the list returned by gitignore.io.
 //
 // Order: gitignore.io templates first,
-// custom files second. The custom-files multiselect is only included when there
-// are files to choose from in the current directory.
+// custom files second. Each multiselect is only included when it has options
+// (the template list is empty when gitignore.io is unavailable). Returns nil
+// when there is nothing to choose from.
 func GetGitIgnoreGroup(availableTypes []string, filesVal *[]string, typesVal *[]string) *huh.Group {
 	defaultFiles := []string{"node_modules"}
 	defaultTypes := []string{"windows", "linux", "macos", "node", "dotnetcore", "visualstudiocode", "webstorm+all"}
@@ -84,11 +85,14 @@ func GetGitIgnoreGroup(availableTypes []string, filesVal *[]string, typesVal *[]
 		filesOptions = append(filesOptions, opt)
 	}
 
-	fields := []huh.Field{
-		huh.NewMultiSelect[string]().
-			Title("Select config names you wish to fetch from https://gitignore.io").
-			Options(availableTypesOptions...).
-			Value(typesVal),
+	var fields []huh.Field
+	if len(availableTypesOptions) > 0 {
+		fields = append(fields,
+			huh.NewMultiSelect[string]().
+				Title("Select config names you wish to fetch from https://gitignore.io").
+				Options(availableTypesOptions...).
+				Value(typesVal),
+		)
 	}
 	if len(filesOptions) > 0 {
 		fields = append(fields,
@@ -97,6 +101,9 @@ func GetGitIgnoreGroup(availableTypes []string, filesVal *[]string, typesVal *[]
 				Options(filesOptions...).
 				Value(filesVal),
 		)
+	}
+	if len(fields) == 0 {
+		return nil
 	}
 	return huh.NewGroup(fields...).WithHeight(10)
 }

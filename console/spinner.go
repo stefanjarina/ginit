@@ -24,6 +24,16 @@ var spinnerTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("12"))
 // In non-TTY or accessibility modes the spinner degrades to a single line of
 // plain text so logs stay readable.
 func Run(title string, fn func() error) error {
+	return run(title, fn, func(msg string, err error) { Error(msg, err) })
+}
+
+// RunOptional behaves like Run but reports a failure as a warning, for steps
+// the caller can recover from. The error is still returned, marked as reported.
+func RunOptional(title string, fn func() error) error {
+	return run(title, fn, func(msg string, err error) { Warning(fmt.Sprintf("%s: %v", msg, err)) })
+}
+
+func run(title string, fn func() error, report func(msg string, err error)) error {
 	plain := Accessible || NoColor || os.Getenv("NO_COLOR") != "" || !isatty.IsTerminal(os.Stdout.Fd())
 
 	var runErr error
@@ -47,7 +57,7 @@ func Run(title string, fn func() error) error {
 	}
 
 	if runErr != nil {
-		Error(fmt.Sprintf("%s failed", title), runErr)
+		report(fmt.Sprintf("%s failed", title), runErr)
 		return markReported(runErr)
 	}
 	Success(fmt.Sprintf("✓ %s", title))
