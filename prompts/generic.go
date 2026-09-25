@@ -165,13 +165,14 @@ func AskForBaseUrl(provider string, accessibility bool) (string, error) {
 }
 
 // AskToPushToRemote returns whether the user wants to push the initial commit.
-func AskToPushToRemote(accessibility bool) (bool, error) {
+// A non-empty note is shown under the question.
+func AskToPushToRemote(note string, accessibility bool) (bool, error) {
 	confirm := true
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().Title("Push to remote now?").Affirmative("Yes").Negative("No").Value(&confirm),
-		),
-	)
+	field := huh.NewConfirm().Title("Push to remote now?").Affirmative("Yes").Negative("No").Value(&confirm)
+	if note != "" {
+		field = field.Description(note)
+	}
+	form := huh.NewForm(huh.NewGroup(field))
 	if err := form.WithAccessible(accessibility).WithLayout(huh.LayoutStack).Run(); err != nil {
 		return false, err
 	}

@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -348,5 +349,92 @@ func TestHandlersRejectMissingProviderBeforePrompting(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Errorf("config file was written: stat error = %v", err)
+	}
+}
+
+type recordingBranchSetter struct {
+	calls []string
+	err   error
+}
+
+func (f *recordingBranchSetter) SetDefaultBranch(projectId int, branch string) error {
+	f.calls = append(f.calls, fmt.Sprintf("%d:%s", projectId, branch))
+	return f.err
+}
+
+// repoWithBareOrigin creates a repository with one commit on trunk whose
+// origin is a local bare repository.
+func repoWithBareOrigin(t *testing.T) {
+	t.Helper()
+	bare := t.TempDir()
+	if out, err := exec.Command("git", "init", "--bare", bare).CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %v: %s", err, out)
+	}
+	dir := repoWithOrigin(t, bare)
+	for _, args := range [][]string{
+		{"checkout", "-q", "-b", "trunk"},
+		{"-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "init"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+}
+
+func TestPushInitialBranchSetsGitlabDefaultBranch(t *testing.T) {
+	console.Accessible = true
+	for _, tc := range []struct {
+		name      string
+		push      bool
+		setterErr error
+		wantCalls []string
+	}{
+		{name: "pushed", push: true, wantCalls: []string{"42:trunk"}},
+		{name: "declined", push: false},
+		{name: "set fails after push", push: true, setterErr: errors.New("boom"), wantCalls: []string{"42:trunk"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repoWithBareOrigin(t)
+			svc := New(&config.Config{DefaultBranch: "trunk"}, "", true)
+			var note string
+			svc.ConfirmPush = func(n string) (bool, error) {
+				note = n
+				return tc.push, nil
+			}
+			setter := &recordingBranchSetter{err: tc.setterErr}
+			svc.setGitlabDefaultBranchAfterPush(setter, 42)
+
+			if err := svc.PushInitialBranch(); err != nil {
+				t.Fatalf("PushInitialBranch() error = %v", err)
+			}
+			if !strings.Contains(note, "empty project") || !strings.Contains(note, `"trunk"`) {
+				t.Errorf("push note = %q, want it to explain the default branch on an empty project", note)
+			}
+			if !reflect.DeepEqual(setter.calls, tc.wantCalls) {
+				t.Errorf("SetDefaultBranch calls = %v, want %v", setter.calls, tc.wantCalls)
+			}
+		})
+	}
+}
+
+func TestPushToRemoteHasNoGitlabNote(t *testing.T) {
+	console.Accessible = true
+	repoWithBareOrigin(t)
+	svc := New(&config.Config{DefaultBranch: "trunk"}, "", true)
+	var asked bool
+	svc.ConfirmPush = func(n string) (bool, error) {
+		asked = true
+		if n != "" {
+			t.Errorf("push note = %q, want none", n)
+		}
+		return false, nil
+	}
+	if err := svc.PushToRemote(); err != nil {
+		t.Fatalf("PushToRemote() error = %v", err)
+	}
+	if !asked {
+		t.Fatal("PushToRemote() did not ask before pushing")
 	}
 }

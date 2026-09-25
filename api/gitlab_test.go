@@ -231,24 +231,69 @@ func TestGitlabCreateRepositoryBody(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&createBody); err != nil {
 			t.Fatalf("decode create body: %v", err)
 		}
-		_, _ = w.Write([]byte(`{"http_url_to_repo":"https://gitlab.example.com/team/demo.git","ssh_url_to_repo":"git@gitlab.example.com:team/demo.git"}`))
+		_, _ = w.Write([]byte(`{"id":42,"http_url_to_repo":"https://gitlab.example.com/team/demo.git","ssh_url_to_repo":"git@gitlab.example.com:team/demo.git"}`))
 	})
 	client := NewGitlabClient("secret", "http://example.test")
 	client.http = &http.Client{Transport: handlerTransport(handler)}
 
-	if _, err := client.CreateRepository(20, "demo", "description", "private", "trunk"); err != nil {
+	project, err := client.CreateRepository(20, "demo", "description", "private")
+	if err != nil {
 		t.Fatalf("CreateRepository() error = %v", err)
 	}
+	if project.ID != 42 {
+		t.Errorf("project ID = %d, want 42", project.ID)
+	}
 	want := map[string]any{
-		"name":           "demo",
-		"description":    "description",
-		"namespace_id":   float64(20),
-		"visibility":     "private",
-		"default_branch": "trunk",
+		"name":         "demo",
+		"description":  "description",
+		"namespace_id": float64(20),
+		"visibility":   "private",
 	}
 	for k, v := range want {
 		if createBody[k] != v {
 			t.Errorf("create body %s = %#v, want %#v", k, createBody[k], v)
 		}
+	}
+	// GitLab ignores default_branch without initialize_with_readme, and a
+	// README commit would diverge from the local initial commit.
+	for _, k := range []string{"default_branch", "initialize_with_readme"} {
+		if _, ok := createBody[k]; ok {
+			t.Errorf("create body sets %s = %#v, want it omitted", k, createBody[k])
+		}
+	}
+}
+
+func TestGitlabSetDefaultBranch(t *testing.T) {
+	var body map[string]any
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/api/v4/projects/42" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"id":42,"default_branch":"trunk"}`))
+	})
+	client := NewGitlabClient("secret", "http://example.test")
+	client.http = &http.Client{Transport: handlerTransport(handler)}
+
+	if err := client.SetDefaultBranch(42, "trunk"); err != nil {
+		t.Fatalf("SetDefaultBranch() error = %v", err)
+	}
+	if len(body) != 1 || body["default_branch"] != "trunk" {
+		t.Fatalf("body = %#v, want only default_branch trunk", body)
+	}
+}
+
+func TestGitlabSetDefaultBranchReportsRejection(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"message":"default branch does not exist"}`))
+	})
+	client := NewGitlabClient("secret", "http://example.test")
+	client.http = &http.Client{Transport: handlerTransport(handler)}
+
+	if err := client.SetDefaultBranch(42, "trunk"); err == nil {
+		t.Fatal("SetDefaultBranch() error = nil, want the API error")
 	}
 }

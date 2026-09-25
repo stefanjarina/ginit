@@ -35,6 +35,7 @@ type GitlabGroup struct {
 }
 
 type gitlabProjectResponse struct {
+	ID            int    `json:"id"`
 	HttpUrlToRepo string `json:"http_url_to_repo"`
 	SshUrlToRepo  string `json:"ssh_url_to_repo"`
 }
@@ -109,22 +110,44 @@ func (gc *GitlabClient) GetGroups() ([]GitlabGroup, error) {
 	return out, nil
 }
 
-// CreateRepository creates the project under the given namespace and returns
-// its clone URLs. defaultBranch is sent as the project's default branch; on an
-// empty project GitLab also adopts the first branch pushed to it.
-func (gc *GitlabClient) CreateRepository(namespaceId int, name, description, visibility, defaultBranch string) (CloneURLs, error) {
+// GitlabProject is a newly created GitLab project.
+type GitlabProject struct {
+	ID   int
+	URLs CloneURLs
+}
+
+// CreateRepository creates an empty project under the given namespace.
+//
+// It does not send default_branch: GitLab ignores that field unless
+// initialize_with_readme is set, and a README commit would make the local
+// initial commit diverge. An empty project has no default branch; GitLab
+// adopts the first branch pushed to it, and SetDefaultBranch records it
+// explicitly once that branch exists.
+func (gc *GitlabClient) CreateRepository(namespaceId int, name, description, visibility string) (GitlabProject, error) {
 	body := map[string]any{
-		"name":           name,
-		"description":    description,
-		"namespace_id":   namespaceId,
-		"visibility":     visibility,
-		"default_branch": defaultBranch,
+		"name":         name,
+		"description":  description,
+		"namespace_id": namespaceId,
+		"visibility":   visibility,
 	}
 	var resp gitlabProjectResponse
 	if err := gc.post("projects", body, &resp); err != nil {
-		return CloneURLs{}, gerrors.NewProvider("gitlab", "create repository", err)
+		return GitlabProject{}, gerrors.NewProvider("gitlab", "create repository", err)
 	}
-	return CloneURLs{SSH: resp.SshUrlToRepo, HTTPS: resp.HttpUrlToRepo}, nil
+	return GitlabProject{
+		ID:   resp.ID,
+		URLs: CloneURLs{SSH: resp.SshUrlToRepo, HTTPS: resp.HttpUrlToRepo},
+	}, nil
+}
+
+// SetDefaultBranch makes branch the project's default branch. GitLab rejects
+// a branch that does not exist yet, so call it after the branch is pushed.
+func (gc *GitlabClient) SetDefaultBranch(projectId int, branch string) error {
+	body := map[string]any{"default_branch": branch}
+	if _, err := gc.do(http.MethodPut, "projects/"+strconv.Itoa(projectId), body, nil); err != nil {
+		return gerrors.NewProvider("gitlab", "set default branch", err)
+	}
+	return nil
 }
 
 // listGroups follows GitLab's X-Next-Page header until every page of groups
