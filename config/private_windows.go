@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -63,45 +64,29 @@ func mkdirPrivate(dir string) error {
 	return nil
 }
 
-// writePrivate writes data to path restricted to the current user. A new file
-// is created with the restricted ACL, and an existing file gets it before
-// any new content is written.
-func writePrivate(path string, data []byte) error {
-	sa, sd, err := privateSecurityAttributes("")
+// createPrivateTemp creates a new file in dir restricted to the current user.
+// Renaming it within the volume keeps that ACL.
+func createPrivateTemp(dir, pattern string) (*os.File, error) {
+	sa, _, err := privateSecurityAttributes("")
 	if err != nil {
-		return err
+		return nil, err
 	}
-	p, err := windows.UTF16PtrFromString(path)
-	if err != nil {
-		return err
+	for range 10000 {
+		name := filepath.Join(dir, pattern+rand.Text())
+		p, err := windows.UTF16PtrFromString(name)
+		if err != nil {
+			return nil, err
+		}
+		h, err := windows.CreateFile(p,
+			windows.GENERIC_READ|windows.GENERIC_WRITE,
+			0, sa, windows.CREATE_NEW, windows.FILE_ATTRIBUTE_NORMAL, 0)
+		if errors.Is(err, windows.ERROR_FILE_EXISTS) {
+			continue
+		}
+		if err != nil {
+			return nil, &os.PathError{Op: "createtemp", Path: name, Err: err}
+		}
+		return os.NewFile(uintptr(h), name), nil
 	}
-	h, err := windows.CreateFile(p,
-		windows.GENERIC_WRITE|windows.WRITE_DAC,
-		0, sa, windows.OPEN_ALWAYS, windows.FILE_ATTRIBUTE_NORMAL, 0)
-	if err != nil {
-		return &os.PathError{Op: "open", Path: path, Err: err}
-	}
-	f := os.NewFile(uintptr(h), path)
-
-	// OPEN_ALWAYS ignores the security attributes for an existing file.
-	dacl, _, err := sd.DACL()
-	if err == nil {
-		err = windows.SetSecurityInfo(h, windows.SE_FILE_OBJECT,
-			windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
-			nil, nil, dacl, nil)
-	}
-	if err != nil {
-		f.Close()
-		return &os.PathError{Op: "set acl", Path: path, Err: err}
-	}
-
-	if err := f.Truncate(0); err != nil {
-		f.Close()
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return err
-	}
-	return f.Close()
+	return nil, &os.PathError{Op: "createtemp", Path: filepath.Join(dir, pattern+"*"), Err: os.ErrExist}
 }
