@@ -156,6 +156,18 @@ func IsDefaultBranchKey(key string) bool {
 	return strings.EqualFold(key, DefaultBranchKey)
 }
 
+// FallbackDefaultBranch is the branch used when defaultbranch is not set.
+const FallbackDefaultBranch = "main"
+
+// EffectiveDefaultBranch returns the configured default branch, or
+// FallbackDefaultBranch when it is empty.
+func (c *Config) EffectiveDefaultBranch() string {
+	if branch := strings.TrimSpace(c.DefaultBranch); branch != "" {
+		return branch
+	}
+	return FallbackDefaultBranch
+}
+
 func (c *Config) SetDefaultBranch(branch string) error {
 	branch = strings.TrimSpace(branch)
 	if branch == "" {

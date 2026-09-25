@@ -124,6 +124,9 @@ func (bc *BitbucketClient) GetProjects(workspace string) ([]BitbucketProject, er
 }
 
 // CreateRepository creates the repository and returns its clone URLs.
+// Bitbucket takes no main branch on create and only accepts an existing
+// branch later. An empty repository adopts the first branch pushed to it, so
+// the init flow pushes the configured branch.
 func (bc *BitbucketClient) CreateRepository(workspace, projectKey, name, description, visibility string) (CloneURLs, error) {
 	body := map[string]any{
 		"scm":         "git",

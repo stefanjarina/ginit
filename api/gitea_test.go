@@ -46,7 +46,7 @@ func TestGiteaClientOwnersAndCreateBody(t *testing.T) {
 		t.Fatalf("owners = %#v", owners)
 	}
 
-	remoteURLs, err := client.CreateRepository(owners[1], "demo", "description", "private")
+	remoteURLs, err := client.CreateRepository(owners[1], "demo", "description", "private", "trunk")
 	if err != nil {
 		t.Fatalf("CreateRepository() error = %v", err)
 	}
@@ -54,7 +54,7 @@ func TestGiteaClientOwnersAndCreateBody(t *testing.T) {
 	if remoteURLs != wantURLs {
 		t.Fatalf("clone URLs = %#v, want %#v", remoteURLs, wantURLs)
 	}
-	if createBody["name"] != "demo" || createBody["description"] != "description" || createBody["private"] != true {
+	if createBody["name"] != "demo" || createBody["description"] != "description" || createBody["private"] != true || createBody["default_branch"] != "trunk" {
 		t.Fatalf("create body = %#v", createBody)
 	}
 }
@@ -78,7 +78,7 @@ func TestGiteaCreateRepositoryVisibility(t *testing.T) {
 		})
 		client := NewGiteaClient("forgejo", "secret", "http://example.test")
 		client.http = &http.Client{Transport: handlerTransport(handler)}
-		if _, err := client.CreateRepository(GiteaOwner{Username: "alice"}, "demo", "", visibility); err != nil {
+		if _, err := client.CreateRepository(GiteaOwner{Username: "alice"}, "demo", "", visibility, "main"); err != nil {
 			t.Fatalf("CreateRepository(%q) error = %v", visibility, err)
 		}
 		if createBody["private"] != wantPrivate {

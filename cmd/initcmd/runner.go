@@ -28,6 +28,7 @@ type initSteps interface {
 	CreateRemoteRepo(provider string) (*service.ProjectInfo, error)
 	CreateRemote(remoteUrl string) error
 	PushToRemote() error
+	PushInitialBranch() error
 }
 
 // repoSteps adapts *service.RepoService to initSteps.
@@ -223,7 +224,7 @@ func (r *runner) full(provider string) error {
 	if err := r.svc.CreateRemote(pi.RemoteUrl); err != nil {
 		return failAfterCreate(provider, pi, "configure remote", err)
 	}
-	if err := r.svc.PushToRemote(); err != nil {
+	if err := r.svc.PushInitialBranch(); err != nil {
 		return failAfterCreate(provider, pi, "push to remote", err)
 	}
 	return nil

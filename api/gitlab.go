@@ -110,13 +110,15 @@ func (gc *GitlabClient) GetGroups() ([]GitlabGroup, error) {
 }
 
 // CreateRepository creates the project under the given namespace and returns
-// its clone URLs.
-func (gc *GitlabClient) CreateRepository(namespaceId int, name, description, visibility string) (CloneURLs, error) {
+// its clone URLs. defaultBranch is sent as the project's default branch; on an
+// empty project GitLab also adopts the first branch pushed to it.
+func (gc *GitlabClient) CreateRepository(namespaceId int, name, description, visibility, defaultBranch string) (CloneURLs, error) {
 	body := map[string]any{
-		"name":         name,
-		"description":  description,
-		"namespace_id": namespaceId,
-		"visibility":   visibility,
+		"name":           name,
+		"description":    description,
+		"namespace_id":   namespaceId,
+		"visibility":     visibility,
+		"default_branch": defaultBranch,
 	}
 	var resp gitlabProjectResponse
 	if err := gc.post("projects", body, &resp); err != nil {

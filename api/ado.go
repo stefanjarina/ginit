@@ -109,7 +109,9 @@ func (ac *AdoClient) GetProjects() ([]string, error) {
 }
 
 // CreateRepository creates a git repo under the given project and returns its
-// clone URLs (sshUrl and the HTTPS remoteUrl).
+// clone URLs (sshUrl and the HTTPS remoteUrl). Azure DevOps takes no default
+// branch on create; an empty repository adopts the first branch pushed to
+// it, so the init flow pushes the configured branch.
 func (ac *AdoClient) CreateRepository(projectName, repoName string) (CloneURLs, error) {
 	var project adoProject
 	if err := ac.get("projects/"+url.PathEscape(projectName), &project); err != nil {

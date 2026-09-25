@@ -195,6 +195,10 @@ func (gc *GithubClient) orgOwner(org githubOrg, admin bool) (GithubOwner, bool) 
 // "internal" is sent as is. User repositories only take the private flag and
 // cannot be internal. An unknown visibility is rejected rather than created
 // public.
+//
+// GitHub takes no default branch on create and refuses to set one to a
+// branch that does not exist yet. An empty repository adopts the first
+// branch pushed to it, so the init flow pushes the configured branch.
 func (gc *GithubClient) CreateRepository(owner GithubOwner, name, description, visibility string) (CloneURLs, error) {
 	switch visibility {
 	case "private", "public", "internal":

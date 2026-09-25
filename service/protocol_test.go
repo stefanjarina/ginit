@@ -36,7 +36,7 @@ func createGithub(t *testing.T, body string) api.CloneURLs {
 
 func createGitlab(t *testing.T, body string) api.CloneURLs {
 	srv := fakeProvider(t, body)
-	urls, err := api.NewGitlabClient("secret", srv.URL).CreateRepository(1, "demo", "", "private")
+	urls, err := api.NewGitlabClient("secret", srv.URL).CreateRepository(1, "demo", "", "private", "main")
 	if err != nil {
 		t.Fatalf("gitlab CreateRepository() error = %v", err)
 	}

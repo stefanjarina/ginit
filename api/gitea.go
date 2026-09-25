@@ -155,12 +155,14 @@ func (gc *GiteaClient) listOrgs() ([]GiteaOrganization, error) {
 // CreateRepository creates a repository for owner. Gitea and Forgejo accept
 // only a private flag when creating a repository (limited visibility exists
 // for users and organizations, not repositories), so anything other than
-// "public" is created private.
-func (gc *GiteaClient) CreateRepository(owner GiteaOwner, name, description, visibility string) (CloneURLs, error) {
+// "public" is created private. defaultBranch is stored as the repository's
+// default branch.
+func (gc *GiteaClient) CreateRepository(owner GiteaOwner, name, description, visibility, defaultBranch string) (CloneURLs, error) {
 	body := map[string]any{
-		"name":        name,
-		"description": description,
-		"private":     visibility != "public",
+		"name":           name,
+		"description":    description,
+		"private":        visibility != "public",
+		"default_branch": defaultBranch,
 	}
 
 	path := "user/repos"
