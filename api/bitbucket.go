@@ -51,7 +51,15 @@ type BitbucketClient struct {
 	http    *http.Client
 }
 
+// NewBitbucketClient builds a client for baseUrl. Bitbucket Cloud
+// authenticates with a scoped API token sent as a Bearer token, and user is
+// ignored there. On any other host (Data Center / Server) the token is sent
+// as a Bearer token too, which is how HTTP access tokens work, unless user is
+// set, in which case HTTP Basic auth with user and token is used.
 func NewBitbucketClient(user, token, baseUrl string) *BitbucketClient {
+	if IsBitbucketCloud(baseUrl) {
+		user = ""
+	}
 	return &BitbucketClient{
 		user:    user,
 		token:   token,
@@ -69,6 +77,28 @@ func NormalizeBitbucketAPIBase(baseUrl string) string {
 		baseUrl += "/2.0"
 	}
 	return baseUrl + "/"
+}
+
+// IsBitbucketCloud reports whether baseUrl points at Bitbucket Cloud. An
+// empty baseUrl means the Cloud default.
+func IsBitbucketCloud(baseUrl string) bool {
+	if strings.TrimSpace(baseUrl) == "" {
+		return true
+	}
+	u, err := url.Parse(strings.TrimSpace(baseUrl))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	return host == "bitbucket.org" || strings.HasSuffix(host, ".bitbucket.org")
+}
+
+func (bc *BitbucketClient) setAuth(req *http.Request) {
+	if bc.user != "" {
+		req.SetBasicAuth(bc.user, bc.token)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+bc.token)
 }
 
 func (bc *BitbucketClient) Connect() error {
@@ -171,7 +201,7 @@ func (bc *BitbucketClient) do(method, pathAndQuery string, body, out any) error 
 	if err != nil {
 		return err
 	}
-	req.SetBasicAuth(bc.user, bc.token)
+	bc.setAuth(req)
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

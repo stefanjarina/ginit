@@ -452,17 +452,9 @@ func (r *RepoService) handleBitbucket() (*ProjectInfo, error) {
 	if err := r.ensureBaseUrlAndToken("bitbucket"); err != nil {
 		return nil, err
 	}
-	if r.Cfg.GetValue("bitbucket", "User") == "" {
-		user, err := prompts.AskForBitbucketUser(r.Accessibility)
-		if err != nil {
-			return nil, err
-		}
-		_ = r.Cfg.SetValue("bitbucket", "User", user)
-		if err := config.Save(r.CfgPath, r.Cfg); err != nil {
-			return nil, err
-		}
-	}
-
+	// Cloud authenticates with a Bearer API token and ignores User. On Data
+	// Center / Server an optional User switches to Basic auth; without it the
+	// HTTP access token is sent as a Bearer token.
 	user := r.Cfg.GetValue("bitbucket", "User")
 	token := r.Cfg.GetValue("bitbucket", "token")
 	baseUrl := r.Cfg.GetValue("bitbucket", "baseurl")

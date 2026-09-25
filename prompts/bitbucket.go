@@ -5,22 +5,6 @@ import (
 	"github.com/stefanjarina/ginit/api"
 )
 
-func AskForBitbucketUser(accessibility bool) (string, error) {
-	var user string
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Bitbucket username").
-				Value(&user).
-				Validate(required("Bitbucket username")),
-		),
-	)
-	if err := form.WithAccessible(accessibility).WithLayout(huh.LayoutStack).Run(); err != nil {
-		return "", err
-	}
-	return user, nil
-}
-
 func AskForBitbucketWorkspace(workspaces []api.BitbucketWorkspace, accessibility bool) (string, error) {
 	if len(workspaces) == 0 {
 		return "", nil

@@ -118,15 +118,15 @@ func (gc *GiteaClient) GetOwners() ([]GiteaOwner, error) {
 	return owners, nil
 }
 
+// CreateRepository creates a repository for owner. Gitea and Forgejo accept
+// only a private flag when creating a repository (limited visibility exists
+// for users and organizations, not repositories), so anything other than
+// "public" is created private.
 func (gc *GiteaClient) CreateRepository(owner GiteaOwner, name, description, visibility string) (CloneURLs, error) {
 	body := map[string]any{
 		"name":        name,
 		"description": description,
 		"private":     visibility != "public",
-	}
-	if visibility == "limited" {
-		body["internal"] = true
-		body["private"] = false
 	}
 
 	path := "user/repos"
