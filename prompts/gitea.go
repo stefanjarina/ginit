@@ -3,11 +3,14 @@ package prompts
 import (
 	"github.com/charmbracelet/huh"
 	"github.com/stefanjarina/ginit/api"
+	gerrors "github.com/stefanjarina/ginit/errors"
 )
 
+// AskForGiteaOwner lets the user pick the user or organization that owns the
+// new repo. An empty list is an error.
 func AskForGiteaOwner(provider string, owners []api.GiteaOwner, accessibility bool) (api.GiteaOwner, error) {
 	if len(owners) == 0 {
-		return api.GiteaOwner{}, nil
+		return api.GiteaOwner{}, gerrors.NewProvider(provider, "no "+provider+" owner to create the repo under", nil)
 	}
 	opts := make([]huh.Option[string], len(owners))
 	for i, owner := range owners {

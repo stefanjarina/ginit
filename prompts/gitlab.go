@@ -5,13 +5,15 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/stefanjarina/ginit/api"
+	gerrors "github.com/stefanjarina/ginit/errors"
 )
 
 // AskForGitlabGroup lets the user pick a GitLab namespace (personal or group)
-// and returns its numeric namespace_id, ready for project creation.
+// and returns its numeric namespace_id, ready for project creation. An empty
+// list is an error, so a create is never sent with namespace_id 0.
 func AskForGitlabGroup(groups []api.GitlabGroup, accessibility bool) (int, error) {
 	if len(groups) == 0 {
-		return 0, nil
+		return 0, gerrors.NewProvider("gitlab", "no GitLab group or namespace to create the project in", nil)
 	}
 	opts := make([]huh.Option[string], len(groups))
 	for i, g := range groups {
