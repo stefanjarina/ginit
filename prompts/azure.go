@@ -1,6 +1,9 @@
 package prompts
 
-import "github.com/charmbracelet/huh"
+import (
+	"github.com/charmbracelet/huh"
+	gerrors "github.com/stefanjarina/ginit/errors"
+)
 
 // AskForAzureOrgName asks for the Azure DevOps organization (just the name,
 // not the full URL — the API client builds https://dev.azure.com/<org>).
@@ -20,10 +23,11 @@ func AskForAzureOrgName(accessibility bool) (string, error) {
 	return org, nil
 }
 
-// AskForAzureProject lets the user pick which Azure DevOps project the new repo lives in.
+// AskForAzureProject lets the user pick which Azure DevOps project the new repo
+// lives in. An empty list is an error, as a repo cannot be created without one.
 func AskForAzureProject(projects []string, accessibility bool) (string, error) {
 	if len(projects) == 0 {
-		return "", nil
+		return "", gerrors.NewProvider("azure", "no Azure DevOps project to create the repo in", nil)
 	}
 	opts := make([]huh.Option[string], len(projects))
 	for i, p := range projects {
