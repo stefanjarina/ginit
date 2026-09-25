@@ -2,8 +2,22 @@
 
 Set a configuration key to a value
 
+### Synopsis
+
+Set a configuration key to a value.
+
+Use "defaultbranch <branch>" to set the branch that git init uses.
+Otherwise set <key> on <provider> (token, baseurl, or a provider option).
+
 ```
-ginit config set <provider> <key> <value> [flags]
+ginit config set (defaultbranch <branch> | <provider> <key> <value>) [flags]
+```
+
+### Examples
+
+```
+  ginit config set defaultbranch trunk
+  ginit config set github token <token>
 ```
 
 ### Options

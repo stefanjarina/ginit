@@ -55,6 +55,47 @@ func TestConfigCommandsRejectMissingArgumentsAndRepoFlag(t *testing.T) {
 	}
 }
 
+func TestConfigDefaultBranch(t *testing.T) {
+	config.Current = &config.Config{DefaultBranch: "main", Providers: []config.Provider{{Name: "github", Options: map[string]string{}}}}
+	config.CurrentPath = filepath.Join(t.TempDir(), "ginit.yaml")
+
+	if _, err := executeConfig("set", "defaultbranch", "trunk"); err != nil {
+		t.Fatalf("config set defaultbranch error = %v", err)
+	}
+	loaded, err := config.Load(config.CurrentPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if loaded.DefaultBranch != "trunk" {
+		t.Fatalf("saved defaultbranch = %q, want trunk", loaded.DefaultBranch)
+	}
+
+	out, err := executeConfig("get", "defaultbranch")
+	if err != nil {
+		t.Fatalf("config get defaultbranch error = %v", err)
+	}
+	if strings.TrimSpace(out) != "trunk" {
+		t.Fatalf("config get defaultbranch output = %q, want trunk", out)
+	}
+
+	rejected := [][]string{
+		{"set", "defaultbranch", ""},
+		{"set", "defaultbranch", "  "},
+		{"set", "defaultbranch"},
+		{"set", "defaultbranch", "a", "b"},
+		{"get", "defaultbranch", "extra"},
+		{"remove", "defaultbranch"},
+	}
+	for _, args := range rejected {
+		if _, err := executeConfig(args...); err == nil {
+			t.Fatalf("config %q error = nil, want error", args)
+		}
+	}
+	if config.Current.DefaultBranch != "trunk" {
+		t.Fatalf("defaultbranch after rejected commands = %q, want trunk", config.Current.DefaultBranch)
+	}
+}
+
 func TestConfigSetRejectsRemovedEncryptFlag(t *testing.T) {
 	config.Current = &config.Config{DefaultBranch: "main", Providers: []config.Provider{{Name: "github", Options: map[string]string{}}}}
 	config.CurrentPath = filepath.Join(t.TempDir(), "ginit.yaml")

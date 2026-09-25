@@ -1,6 +1,7 @@
 package configcmd
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -11,7 +12,12 @@ import (
 var removeCmd = &cobra.Command{
 	Use:   "remove <provider> <key>",
 	Short: "Remove a configuration key",
-	Args:  cobra.ExactArgs(2),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 && config.IsDefaultBranchKey(args[0]) {
+			return fmt.Errorf("%s cannot be removed; change it with \"ginit config set %s <branch>\"", config.DefaultBranchKey, config.DefaultBranchKey)
+		}
+		return cobra.ExactArgs(2)(cmd, args)
+	},
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := config.Current.RemoveValue(args[0], args[1]); err != nil {
 			console.Error("remove value", err)

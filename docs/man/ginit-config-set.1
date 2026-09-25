@@ -6,11 +6,15 @@ ginit-config-set - Set a configuration key to a value
 
 
 .SH SYNOPSIS
-\fBginit config set    [flags]\fP
+\fBginit config set (defaultbranch  |   ) [flags]\fP
 
 
 .SH DESCRIPTION
-Set a configuration key to a value
+Set a configuration key to a value.
+
+.PP
+Use "defaultbranch " to set the branch that git init uses.
+Otherwise set  on  (token, baseurl, or a provider option).
 
 
 .SH OPTIONS
@@ -33,6 +37,13 @@ Set a configuration key to a value
 .PP
 \fB-v\fP, \fB--verbose\fP[=false]
 	Enable verbose output (full error chains)
+
+
+.SH EXAMPLE
+.EX
+  ginit config set defaultbranch trunk
+  ginit config set github token <token>
+.EE
 
 
 .SH SEE ALSO

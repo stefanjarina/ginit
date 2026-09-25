@@ -68,3 +68,34 @@ func TestSetRemoveSaveLowercaseYAML(t *testing.T) {
 		t.Errorf("saved YAML contains Go field names:\n%s", got)
 	}
 }
+
+func TestDefaultBranchRoundTripsThroughSaveAndLoad(t *testing.T) {
+	cfg := &Config{DefaultBranch: "main", Providers: []Provider{{Name: "github", Options: map[string]string{}}}}
+	if err := cfg.SetDefaultBranch("trunk"); err != nil {
+		t.Fatalf("SetDefaultBranch() error = %v", err)
+	}
+
+	path := filepath.Join(t.TempDir(), "ginit.yaml")
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if loaded.DefaultBranch != "trunk" {
+		t.Fatalf("DefaultBranch = %q, want trunk", loaded.DefaultBranch)
+	}
+}
+
+func TestSetDefaultBranchRejectsEmpty(t *testing.T) {
+	cfg := &Config{DefaultBranch: "main"}
+	for _, value := range []string{"", "   "} {
+		if err := cfg.SetDefaultBranch(value); err == nil {
+			t.Fatalf("SetDefaultBranch(%q) error = nil, want error", value)
+		}
+	}
+	if cfg.DefaultBranch != "main" {
+		t.Fatalf("DefaultBranch = %q, want main", cfg.DefaultBranch)
+	}
+}
