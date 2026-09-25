@@ -107,3 +107,24 @@ func TestGetListOfFilesErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestDefaultVisibility(t *testing.T) {
+	tests := []struct {
+		name    string
+		choices []string
+		current string
+		want    string
+	}{
+		{name: "empty prefers private", choices: []string{"private", "internal", "public"}, want: "private"},
+		{name: "keeps valid current", choices: []string{"private", "internal", "public"}, current: "internal", want: "internal"},
+		{name: "drops invalid current", choices: []string{"private", "public"}, current: "internal", want: "private"},
+		{name: "no private choice", choices: []string{"internal", "public"}, want: "internal"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := defaultVisibility(tt.choices, tt.current); got != tt.want {
+				t.Errorf("defaultVisibility(%v, %q) = %q, want %q", tt.choices, tt.current, got, tt.want)
+			}
+		})
+	}
+}

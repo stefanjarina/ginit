@@ -15,15 +15,17 @@ func GetTokenGroup(token *string) *huh.Group {
 	)
 }
 
-func GetRepoDetailGroup(repository string, repoName *string, description *string, visibility *string) *huh.Group {
-	choices := VisibilityChoices(repository)
+// GetRepoDetailGroup builds the name, description and visibility prompt.
+// choices overrides the provider's visibility choices when it is not empty.
+func GetRepoDetailGroup(repository string, choices []string, repoName *string, description *string, visibility *string) *huh.Group {
+	if len(choices) == 0 {
+		choices = VisibilityChoices(repository)
+	}
 	visibilityChoices := make([]huh.Option[string], 0, len(choices))
 	for _, choice := range choices {
 		visibilityChoices = append(visibilityChoices, huh.NewOption(toTitle(choice), choice))
 	}
-	if *visibility == "" {
-		*visibility = "private"
-	}
+	*visibility = defaultVisibility(choices, *visibility)
 
 	return huh.NewGroup(
 		huh.NewInput().Title("Repository Name").Value(repoName).Validate(func(name string) error {
@@ -32,6 +34,18 @@ func GetRepoDetailGroup(repository string, repoName *string, description *string
 		huh.NewInput().Title("Description").Value(description),
 		huh.NewSelect[string]().Title("Visibility").Options(visibilityChoices...).Value(visibility),
 	)
+}
+
+// defaultVisibility keeps current when it is one of choices, otherwise it
+// prefers private and falls back to the first choice.
+func defaultVisibility(choices []string, current string) string {
+	if current != "" && slices.Contains(choices, current) {
+		return current
+	}
+	if slices.Contains(choices, "private") || len(choices) == 0 {
+		return "private"
+	}
+	return choices[0]
 }
 
 func VisibilityChoices(repository string) []string {

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,10 +19,48 @@ type githubRepoResponse struct {
 	SSHURL   string `json:"ssh_url"`
 }
 
+type githubUser struct {
+	Login string `json:"login"`
+	Name  string `json:"name"`
+}
+
+type githubOrgMembership struct {
+	Role         string `json:"role"`
+	Organization struct {
+		Login string `json:"login"`
+	} `json:"organization"`
+}
+
+// githubOrg holds the organization settings that decide what a member may
+// create. The member settings are pointers because GitHub only returns them
+// to some callers; a missing value is not treated as a restriction.
+type githubOrg struct {
+	Login string `json:"login"`
+	Name  string `json:"name"`
+	Plan  *struct {
+		Name string `json:"name"`
+	} `json:"plan"`
+	MembersCanCreateRepositories         *bool `json:"members_can_create_repositories"`
+	MembersCanCreatePublicRepositories   *bool `json:"members_can_create_public_repositories"`
+	MembersCanCreatePrivateRepositories  *bool `json:"members_can_create_private_repositories"`
+	MembersCanCreateInternalRepositories *bool `json:"members_can_create_internal_repositories"`
+}
+
+// GithubOwner is an account a repository can be created under: the
+// authenticated user or one of their organizations. Visibilities lists what
+// can be created there, most restrictive first.
+type GithubOwner struct {
+	Login        string
+	Name         string
+	IsOrg        bool
+	Visibilities []string
+}
+
 type GithubClient struct {
 	token   string
 	baseUrl string
 	http    *http.Client
+	user    *githubUser
 }
 
 func NewGithubClient(token, baseUrl string) *GithubClient {
@@ -47,19 +87,139 @@ func NormalizeGithubAPIBase(baseUrl string) string {
 }
 
 func (gc *GithubClient) Connect() error {
-	return gc.get("user", nil)
+	var u githubUser
+	if err := gc.get("user", &u); err != nil {
+		return err
+	}
+	gc.user = &u
+	return nil
 }
 
-// CreateRepository creates the repo on github.com under the authenticated user
-// and returns its clone URLs.
-func (gc *GithubClient) CreateRepository(name, description, visibility string) (CloneURLs, error) {
+// isEnterpriseServer reports whether the client talks to GitHub Enterprise
+// Server, where every organization supports internal repositories.
+func (gc *GithubClient) isEnterpriseServer() bool {
+	return gc.baseUrl != "https://api.github.com/"
+}
+
+// UserOwner returns the authenticated user as a repository owner. Users can
+// only own private and public repositories.
+func (gc *GithubClient) UserOwner() (GithubOwner, error) {
+	if gc.user == nil {
+		return GithubOwner{}, fmt.Errorf("not authenticated; call Connect first")
+	}
+	name := gc.user.Name
+	if name == "" {
+		name = gc.user.Login
+	}
+	return GithubOwner{Login: gc.user.Login, Name: name, Visibilities: []string{"private", "public"}}, nil
+}
+
+// GetOwners returns the authenticated user followed by the organizations the
+// user is an active member of and may create repositories in.
+func (gc *GithubClient) GetOwners() ([]GithubOwner, error) {
+	user, err := gc.UserOwner()
+	if err != nil {
+		return nil, err
+	}
+	owners := []GithubOwner{user}
+
+	const perPage = 100
+	for page := 1; ; page++ {
+		var memberships []githubOrgMembership
+		query := "user/memberships/orgs?state=active&per_page=" + strconv.Itoa(perPage) + "&page=" + strconv.Itoa(page)
+		if err := gc.get(query, &memberships); err != nil {
+			return nil, err
+		}
+		for _, m := range memberships {
+			if m.Organization.Login == "" {
+				continue
+			}
+			var org githubOrg
+			if err := gc.get("orgs/"+url.PathEscape(m.Organization.Login), &org); err != nil {
+				return nil, err
+			}
+			if org.Login == "" {
+				org.Login = m.Organization.Login
+			}
+			if owner, ok := gc.orgOwner(org, m.Role == "admin"); ok {
+				owners = append(owners, owner)
+			}
+		}
+		if len(memberships) < perPage {
+			break
+		}
+	}
+	return owners, nil
+}
+
+// orgOwner turns an organization into an owner. It returns false when the
+// organization does not let the user create any repository.
+func (gc *GithubClient) orgOwner(org githubOrg, admin bool) (GithubOwner, bool) {
+	allowed := func(setting *bool) bool {
+		return admin || setting == nil || *setting
+	}
+	if !allowed(org.MembersCanCreateRepositories) {
+		return GithubOwner{}, false
+	}
+
+	// Internal repositories need an enterprise: GitHub Enterprise Server, or
+	// an organization on the enterprise plan of GitHub Enterprise Cloud. The
+	// internal member setting is only returned for such organizations.
+	supportsInternal := gc.isEnterpriseServer() ||
+		(org.Plan != nil && org.Plan.Name == "enterprise") ||
+		org.MembersCanCreateInternalRepositories != nil
+
+	var visibilities []string
+	if allowed(org.MembersCanCreatePrivateRepositories) {
+		visibilities = append(visibilities, "private")
+	}
+	if supportsInternal && allowed(org.MembersCanCreateInternalRepositories) {
+		visibilities = append(visibilities, "internal")
+	}
+	if allowed(org.MembersCanCreatePublicRepositories) {
+		visibilities = append(visibilities, "public")
+	}
+	if len(visibilities) == 0 {
+		return GithubOwner{}, false
+	}
+
+	name := org.Name
+	if name == "" {
+		name = org.Login
+	}
+	return GithubOwner{Login: org.Login, Name: name, IsOrg: true, Visibilities: visibilities}, true
+}
+
+// CreateRepository creates the repo under owner and returns its clone URLs.
+// Organization repositories are created with GitHub's visibility field, so
+// "internal" is sent as is. User repositories only take the private flag and
+// cannot be internal. An unknown visibility is rejected rather than created
+// public.
+func (gc *GithubClient) CreateRepository(owner GithubOwner, name, description, visibility string) (CloneURLs, error) {
+	switch visibility {
+	case "private", "public", "internal":
+	default:
+		return CloneURLs{}, gerrors.NewProvider("github", "create repository", fmt.Errorf("unsupported visibility %q", visibility))
+	}
+
 	body := map[string]any{
 		"name":        name,
 		"description": description,
-		"private":     visibility == "private",
 	}
+	path := "user/repos"
+	if owner.IsOrg {
+		path = "orgs/" + url.PathEscape(owner.Login) + "/repos"
+		body["visibility"] = visibility
+	} else {
+		if visibility == "internal" {
+			return CloneURLs{}, gerrors.NewProvider("github", "create repository",
+				fmt.Errorf("internal visibility is only available for organization repositories"))
+		}
+		body["private"] = visibility == "private"
+	}
+
 	var resp githubRepoResponse
-	if err := gc.post("user/repos", body, &resp); err != nil {
+	if err := gc.post(path, body, &resp); err != nil {
 		return CloneURLs{}, gerrors.NewProvider("github", "create repository", err)
 	}
 	return CloneURLs{SSH: resp.SSHURL, HTTPS: resp.CloneURL}, nil

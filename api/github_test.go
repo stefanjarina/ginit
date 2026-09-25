@@ -3,6 +3,9 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -59,7 +62,11 @@ func TestGithubClientConnectAndCreateRepository(t *testing.T) {
 		t.Fatalf("Connect() error = %v", err)
 	}
 
-	remoteURLs, err := client.CreateRepository("demo", "description", "private")
+	owner, err := client.UserOwner()
+	if err != nil {
+		t.Fatalf("UserOwner() error = %v", err)
+	}
+	remoteURLs, err := client.CreateRepository(owner, "demo", "description", "private")
 	if err != nil {
 		t.Fatalf("CreateRepository() error = %v", err)
 	}
@@ -68,7 +75,173 @@ func TestGithubClientConnectAndCreateRepository(t *testing.T) {
 	if remoteURLs != wantURLs {
 		t.Fatalf("clone URLs = %#v, want %#v", remoteURLs, wantURLs)
 	}
-	if createBody["name"] != "demo" || createBody["description"] != "description" || createBody["private"] != true {
-		t.Fatalf("create body = %#v", createBody)
+	want := map[string]any{"name": "demo", "description": "description", "private": true}
+	if !reflect.DeepEqual(createBody, want) {
+		t.Fatalf("create body = %#v, want %#v", createBody, want)
+	}
+}
+
+func TestGithubCreateRepositoryBody(t *testing.T) {
+	org := GithubOwner{Login: "acme", IsOrg: true}
+	user := GithubOwner{Login: "alice"}
+	tests := []struct {
+		name       string
+		owner      GithubOwner
+		visibility string
+		wantPath   string
+		wantBody   map[string]any
+	}{
+		{name: "user private", owner: user, visibility: "private", wantPath: "/user/repos",
+			wantBody: map[string]any{"name": "demo", "description": "d", "private": true}},
+		{name: "user public", owner: user, visibility: "public", wantPath: "/user/repos",
+			wantBody: map[string]any{"name": "demo", "description": "d", "private": false}},
+		{name: "org private", owner: org, visibility: "private", wantPath: "/orgs/acme/repos",
+			wantBody: map[string]any{"name": "demo", "description": "d", "visibility": "private"}},
+		{name: "org public", owner: org, visibility: "public", wantPath: "/orgs/acme/repos",
+			wantBody: map[string]any{"name": "demo", "description": "d", "visibility": "public"}},
+		{name: "org internal", owner: org, visibility: "internal", wantPath: "/orgs/acme/repos",
+			wantBody: map[string]any{"name": "demo", "description": "d", "visibility": "internal"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotPath string
+			var gotBody map[string]any
+			client := NewGithubClient("secret", "")
+			client.http = &http.Client{Transport: handlerTransport(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost {
+					t.Fatalf("method = %s, want POST", r.Method)
+				}
+				gotPath = r.URL.Path
+				if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+					t.Fatalf("decode create body: %v", err)
+				}
+				_, _ = w.Write([]byte(`{"clone_url":"https://github.com/x/demo.git","ssh_url":"git@github.com:x/demo.git"}`))
+			}))}
+
+			if _, err := client.CreateRepository(tt.owner, "demo", "d", tt.visibility); err != nil {
+				t.Fatalf("CreateRepository() error = %v", err)
+			}
+			if gotPath != tt.wantPath {
+				t.Errorf("path = %q, want %q", gotPath, tt.wantPath)
+			}
+			if !reflect.DeepEqual(gotBody, tt.wantBody) {
+				t.Errorf("body = %#v, want %#v", gotBody, tt.wantBody)
+			}
+		})
+	}
+}
+
+func TestGithubCreateRepositoryRejectsWithoutRequest(t *testing.T) {
+	tests := []struct {
+		name       string
+		owner      GithubOwner
+		visibility string
+	}{
+		{name: "internal user repo", owner: GithubOwner{Login: "alice"}, visibility: "internal"},
+		{name: "unknown visibility", owner: GithubOwner{Login: "acme", IsOrg: true}, visibility: "limited"},
+		{name: "empty visibility", owner: GithubOwner{Login: "alice"}, visibility: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := NewGithubClient("secret", "")
+			client.http = &http.Client{Transport: handlerTransport(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+			}))}
+			if _, err := client.CreateRepository(tt.owner, "demo", "", tt.visibility); err == nil {
+				t.Fatal("CreateRepository() error = nil, want error")
+			}
+		})
+	}
+}
+
+func TestGithubGetOwners(t *testing.T) {
+	const orgs = `{
+		"acme":    {"login":"acme","name":"Acme Corp","plan":{"name":"enterprise"}},
+		"oss":     {"login":"oss","name":"","members_can_create_repositories":true},
+		"locked":  {"login":"locked","members_can_create_repositories":false},
+		"nopub":   {"login":"nopub","members_can_create_public_repositories":false,"members_can_create_internal_repositories":true},
+		"owned":   {"login":"owned","members_can_create_repositories":false}
+	}`
+	var orgMap map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(orgs), &orgMap); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		baseUrl string
+		want    []GithubOwner
+	}{
+		{
+			name: "github.com",
+			want: []GithubOwner{
+				{Login: "alice", Name: "Alice", Visibilities: []string{"private", "public"}},
+				{Login: "acme", Name: "Acme Corp", IsOrg: true, Visibilities: []string{"private", "internal", "public"}},
+				{Login: "oss", Name: "oss", IsOrg: true, Visibilities: []string{"private", "public"}},
+				{Login: "nopub", Name: "nopub", IsOrg: true, Visibilities: []string{"private", "internal"}},
+				{Login: "owned", Name: "owned", IsOrg: true, Visibilities: []string{"private", "public"}},
+			},
+		},
+		{
+			name:    "enterprise server",
+			baseUrl: "https://github.example.com",
+			want: []GithubOwner{
+				{Login: "alice", Name: "Alice", Visibilities: []string{"private", "public"}},
+				{Login: "acme", Name: "Acme Corp", IsOrg: true, Visibilities: []string{"private", "internal", "public"}},
+				{Login: "oss", Name: "oss", IsOrg: true, Visibilities: []string{"private", "internal", "public"}},
+				{Login: "nopub", Name: "nopub", IsOrg: true, Visibilities: []string{"private", "internal"}},
+				{Login: "owned", Name: "owned", IsOrg: true, Visibilities: []string{"private", "internal", "public"}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base, err := url.Parse(NormalizeGithubAPIBase(tt.baseUrl))
+			if err != nil {
+				t.Fatal(err)
+			}
+			prefix := strings.TrimSuffix(base.Path, "/")
+			client := NewGithubClient("secret", tt.baseUrl)
+			client.http = &http.Client{Transport: handlerTransport(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				path := strings.TrimPrefix(r.URL.Path, prefix)
+				switch {
+				case path == "/user":
+					_, _ = w.Write([]byte(`{"login":"alice","name":"Alice"}`))
+				case path == "/user/memberships/orgs":
+					if r.URL.Query().Get("state") != "active" {
+						t.Errorf("state = %q, want active", r.URL.Query().Get("state"))
+					}
+					_, _ = w.Write([]byte(`[
+						{"role":"member","organization":{"login":"acme"}},
+						{"role":"member","organization":{"login":"oss"}},
+						{"role":"member","organization":{"login":"locked"}},
+						{"role":"member","organization":{"login":"nopub"}},
+						{"role":"admin","organization":{"login":"owned"}}
+					]`))
+				case strings.HasPrefix(path, "/orgs/"):
+					org, ok := orgMap[strings.TrimPrefix(path, "/orgs/")]
+					if !ok {
+						t.Fatalf("unexpected org path %s", path)
+					}
+					_, _ = w.Write(org)
+				default:
+					t.Fatalf("unexpected path %s", r.URL.Path)
+				}
+			}))}
+
+			if _, err := client.GetOwners(); err == nil {
+				t.Fatal("GetOwners() before Connect error = nil, want error")
+			}
+			if err := client.Connect(); err != nil {
+				t.Fatalf("Connect() error = %v", err)
+			}
+			got, err := client.GetOwners()
+			if err != nil {
+				t.Fatalf("GetOwners() error = %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetOwners() =\n%#v\nwant\n%#v", got, tt.want)
+			}
+		})
 	}
 }

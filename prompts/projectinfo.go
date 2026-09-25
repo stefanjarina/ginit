@@ -10,12 +10,13 @@ import (
 
 // AskForProjectInfo runs the repo-detail + gitignore selection forms and
 // returns a populated ProjectInfo. availableTypes is the list fetched from
-// gitignore.io and may be empty when it is unavailable.
+// gitignore.io and may be empty when it is unavailable. visibilities
+// overrides the provider's visibility choices when it is not empty.
 //
 // name → description → visibility,
 // then if a .gitignore already exists prompts to keep it; otherwise asks for
 // gitignore.io templates and (when there are files) custom files to ignore.
-func AskForProjectInfo(provider string, availableTypes []string, accessibility bool) (*model.ProjectInfo, error) {
+func AskForProjectInfo(provider string, visibilities []string, availableTypes []string, accessibility bool) (*model.ProjectInfo, error) {
 	pi := &model.ProjectInfo{}
 
 	cwd, err := os.Getwd()
@@ -25,7 +26,7 @@ func AskForProjectInfo(provider string, availableTypes []string, accessibility b
 	pi.Name = filepath.Base(cwd)
 
 	detailForm := huh.NewForm(
-		GetRepoDetailGroup(provider, &pi.Name, &pi.Description, &pi.Visibility),
+		GetRepoDetailGroup(provider, visibilities, &pi.Name, &pi.Description, &pi.Visibility),
 	)
 	if err := detailForm.WithAccessible(accessibility).WithLayout(huh.LayoutStack).Run(); err != nil {
 		return nil, err
