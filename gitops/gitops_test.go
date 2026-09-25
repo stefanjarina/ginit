@@ -392,3 +392,27 @@ func TestStagedFiles(t *testing.T) {
 		t.Errorf("StagedFiles() = %q, want %q", got, want)
 	}
 }
+
+func TestFindGit(t *testing.T) {
+	none := t.TempDir()
+	if got := FindGit(none); got != GitNone {
+		t.Errorf("FindGit(empty) = %v, want GitNone", got)
+	}
+
+	repo := t.TempDir()
+	if err := os.Mkdir(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := FindGit(repo); got != GitDirectory {
+		t.Errorf("FindGit(.git dir) = %v, want GitDirectory", got)
+	}
+
+	// A linked worktree or submodule: .git is a file, here with a dangling target.
+	linked := t.TempDir()
+	if err := os.WriteFile(filepath.Join(linked, ".git"), []byte("gitdir: /nonexistent\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := FindGit(linked); got != GitFile {
+		t.Errorf("FindGit(.git file) = %v, want GitFile", got)
+	}
+}

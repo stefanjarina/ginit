@@ -284,11 +284,34 @@ func CurrentBranch(dir string) (string, error) {
 	return string(bytes.TrimSpace(out)), nil
 }
 
-func HasGitDir(dir string) bool {
-	info, err := os.Stat(filepath.Join(dir, ".git"))
-	return err == nil && info.IsDir()
+// GitEntry describes what, if anything, sits at dir/.git.
+type GitEntry int
+
+const (
+	// GitNone means dir has no .git entry.
+	GitNone GitEntry = iota
+	// GitDirectory means .git is a directory holding a repository.
+	GitDirectory
+	// GitFile means .git is a file (or symlink) pointing at a git directory
+	// elsewhere, as in a linked worktree or a submodule.
+	GitFile
+)
+
+// FindGit reports what sits at dir/.git. The entry itself is inspected, not
+// what it points to, so a .git file whose target is gone is still found.
+func FindGit(dir string) GitEntry {
+	info, err := os.Lstat(filepath.Join(dir, ".git"))
+	switch {
+	case err != nil:
+		return GitNone
+	case info.IsDir():
+		return GitDirectory
+	default:
+		return GitFile
+	}
 }
 
+// RemoveGitDir deletes dir/.git, whether it is a directory or a file.
 func RemoveGitDir(dir string) error {
 	return os.RemoveAll(filepath.Join(dir, ".git"))
 }
