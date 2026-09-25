@@ -169,3 +169,33 @@ func TestEffectiveDefaultBranch(t *testing.T) {
 		}
 	}
 }
+
+func TestSaveRestrictsAccessToCurrentUser(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "ginit")
+	path := filepath.Join(dir, "ginit.yaml")
+	cfg := &Config{DefaultBranch: "main", Providers: []Provider{{Name: "github", Token: "secret"}}}
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	assertPrivate(t, dir, true)
+	assertPrivate(t, path, false)
+}
+
+func TestSaveRestrictsExistingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ginit.yaml")
+	if err := os.WriteFile(path, []byte("defaultbranch: main\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	cfg := &Config{DefaultBranch: "trunk", Providers: []Provider{{Name: "github", Token: "secret"}}}
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	assertPrivate(t, path, false)
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got.DefaultBranch != "trunk" || got.GetValue("github", "token") != "secret" {
+		t.Errorf("Load() = %+v, want the saved config", got)
+	}
+}

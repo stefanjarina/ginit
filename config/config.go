@@ -57,15 +57,17 @@ func Load(path string) (*Config, error) {
 	return &c, nil
 }
 
+// Save writes c to path. The file, and the config directory when Save creates
+// it, are restricted to the current user because the config holds tokens.
 func Save(path string, c *Config) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := mkdirPrivate(filepath.Dir(path)); err != nil {
 		return gerrors.New("create config dir", err)
 	}
 	data, err := yaml.Marshal(c)
 	if err != nil {
 		return gerrors.New("marshal config", err)
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := writePrivate(path, data); err != nil {
 		return gerrors.New(fmt.Sprintf("write config %s", path), err)
 	}
 	return nil
