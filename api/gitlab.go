@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -71,9 +72,18 @@ func (gc *GitlabClient) Connect() error {
 	return nil
 }
 
-// GetGroups returns the user's personal namespace plus every group with the
-// requested visibility. Mirrors GitlabService.GetGroups.
-func (gc *GitlabClient) GetGroups(visibility string) ([]GitlabGroup, error) {
+// gitlabGroupsPerPage is the page size requested from GET /groups; GitLab's
+// maximum is 100 (the default of 20 would mean more round trips).
+const gitlabGroupsPerPage = 100
+
+// gitlabDeveloperAccess is GitLab's Developer access level, the lowest role a
+// group can allow to create projects.
+const gitlabDeveloperAccess = 30
+
+// GetGroups returns the user's personal namespace plus every group the user
+// can create projects in. Groups are not filtered by the new project's
+// visibility: a private project may live in a public group.
+func (gc *GitlabClient) GetGroups() ([]GitlabGroup, error) {
 	if gc.user == nil {
 		return nil, fmt.Errorf("not authenticated; call Connect first")
 	}
@@ -86,16 +96,9 @@ func (gc *GitlabClient) GetGroups(visibility string) ([]GitlabGroup, error) {
 		return nil, err
 	}
 
-	var groups []GitlabGroup
-	if visibility != "" {
-		gq := url.Values{"visibility": {visibility}}
-		if err := gc.get("groups?"+gq.Encode(), &groups); err != nil {
-			return nil, err
-		}
-	} else {
-		if err := gc.get("groups", &groups); err != nil {
-			return nil, err
-		}
+	groups, err := gc.listGroups()
+	if err != nil {
+		return nil, err
 	}
 
 	out := make([]GitlabGroup, 0, len(groups)+1)
@@ -122,28 +125,54 @@ func (gc *GitlabClient) CreateRepository(namespaceId int, name, description, vis
 	return CloneURLs{SSH: resp.SshUrlToRepo, HTTPS: resp.HttpUrlToRepo}, nil
 }
 
+// listGroups follows GitLab's X-Next-Page header until every page of groups
+// the user has at least Developer access to has been read.
+func (gc *GitlabClient) listGroups() ([]GitlabGroup, error) {
+	var all []GitlabGroup
+	page := "1"
+	for page != "" {
+		q := url.Values{
+			"min_access_level": {strconv.Itoa(gitlabDeveloperAccess)},
+			"per_page":         {strconv.Itoa(gitlabGroupsPerPage)},
+			"page":             {page},
+		}
+		var groups []GitlabGroup
+		hdr, err := gc.do(http.MethodGet, "groups?"+q.Encode(), nil, &groups)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, groups...)
+		page = strings.TrimSpace(hdr.Get("X-Next-Page"))
+	}
+	return all, nil
+}
+
 // ----- HTTP helpers -----
 
 func (gc *GitlabClient) get(pathAndQuery string, out any) error {
-	return gc.do(http.MethodGet, pathAndQuery, nil, out)
+	_, err := gc.do(http.MethodGet, pathAndQuery, nil, out)
+	return err
 }
 
 func (gc *GitlabClient) post(path string, body, out any) error {
-	return gc.do(http.MethodPost, path, body, out)
+	_, err := gc.do(http.MethodPost, path, body, out)
+	return err
 }
 
-func (gc *GitlabClient) do(method, pathAndQuery string, body, out any) error {
+// do sends the request, decodes a successful JSON response into out and
+// returns the response headers (used for pagination).
+func (gc *GitlabClient) do(method, pathAndQuery string, body, out any) (http.Header, error) {
 	var reader io.Reader
 	if body != nil {
 		buf, err := json.Marshal(body)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		reader = bytes.NewReader(buf)
 	}
 	req, err := http.NewRequest(method, gc.baseUrl+pathAndQuery, reader)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("PRIVATE-TOKEN", gc.token)
 	req.Header.Set("Accept", "application/json")
@@ -152,15 +181,15 @@ func (gc *GitlabClient) do(method, pathAndQuery string, body, out any) error {
 	}
 	resp, err := gc.http.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	rb, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("gitlab %s %s: %d %s", method, pathAndQuery, resp.StatusCode, strings.TrimSpace(string(rb)))
+		return nil, fmt.Errorf("gitlab %s %s: %d %s", method, pathAndQuery, resp.StatusCode, strings.TrimSpace(string(rb)))
 	}
 	if out == nil {
-		return nil
+		return resp.Header, nil
 	}
-	return json.Unmarshal(rb, out)
+	return resp.Header, json.Unmarshal(rb, out)
 }

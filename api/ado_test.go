@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"testing"
 )
 
@@ -92,5 +93,78 @@ func TestAdoClientConnectGetProjectsAndCreateRepository(t *testing.T) {
 	project, ok := createBody["project"].(map[string]any)
 	if createBody["name"] != "demo" || !ok || project["id"] != "proj-id" || project["name"] != "MyProject" {
 		t.Fatalf("create body = %#v", createBody)
+	}
+}
+
+func TestAdoClientGetProjectsFollowsContinuationToken(t *testing.T) {
+	tests := []struct {
+		name  string
+		page1 func(w http.ResponseWriter)
+	}{
+		{
+			name: "header token",
+			page1: func(w http.ResponseWriter) {
+				w.Header().Set("X-MS-ContinuationToken", "next page")
+				_, _ = w.Write([]byte(`{"value":[{"name":"Alpha"},{"name":"Beta"}]}`))
+			},
+		},
+		{
+			name: "body token",
+			page1: func(w http.ResponseWriter) {
+				_, _ = w.Write([]byte(`{"value":[{"name":"Alpha"},{"name":"Beta"}],"continuationToken":"next page"}`))
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var calls []string
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/contoso/_apis/projects" {
+					t.Fatalf("unexpected path %s", r.URL.Path)
+				}
+				token := r.URL.Query().Get("continuationToken")
+				calls = append(calls, token)
+				switch token {
+				case "":
+					tt.page1(w)
+				case "next page":
+					_, _ = w.Write([]byte(`{"value":[{"name":"Gamma"}]}`))
+				default:
+					t.Fatalf("unexpected continuationToken %q", token)
+				}
+			})
+
+			client := NewAdoClient("secret", "http://example.test", "contoso")
+			client.http = &http.Client{Transport: handlerTransport(handler)}
+			projects, err := client.GetProjects()
+			if err != nil {
+				t.Fatalf("GetProjects() error = %v", err)
+			}
+			want := []string{"Alpha", "Beta", "Gamma"}
+			if !reflect.DeepEqual(projects, want) {
+				t.Fatalf("projects = %#v, want %#v", projects, want)
+			}
+			if len(calls) != 2 {
+				t.Fatalf("calls = %#v, want 2 pages", calls)
+			}
+		})
+	}
+}
+
+func TestAdoClientGetProjectsRejectsRepeatedContinuationToken(t *testing.T) {
+	calls := 0
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls > 3 {
+			t.Fatalf("GetProjects() kept paging after a repeated token")
+		}
+		w.Header().Set("X-MS-ContinuationToken", "same")
+		_, _ = w.Write([]byte(`{"value":[{"name":"Alpha"}]}`))
+	})
+
+	client := NewAdoClient("secret", "http://example.test", "contoso")
+	client.http = &http.Client{Transport: handlerTransport(handler)}
+	if _, err := client.GetProjects(); err == nil {
+		t.Fatal("GetProjects() error = nil, want repeated token error")
 	}
 }

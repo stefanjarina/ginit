@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -97,8 +98,8 @@ func (gc *GiteaClient) GetOwners() ([]GiteaOwner, error) {
 		IsOrg:    false,
 	}}
 
-	var orgs []GiteaOrganization
-	if err := gc.get("user/orgs", &orgs); err != nil {
+	orgs, err := gc.listOrgs()
+	if err != nil {
 		return nil, err
 	}
 	for _, org := range orgs {
@@ -116,6 +117,39 @@ func (gc *GiteaClient) GetOwners() ([]GiteaOwner, error) {
 		owners = append(owners, GiteaOwner{Username: username, Name: name, IsOrg: true})
 	}
 	return owners, nil
+}
+
+// giteaPageLimit is the page size requested from list endpoints. It matches
+// Gitea's and Forgejo's default MAX_RESPONSE_ITEMS.
+const giteaPageLimit = 50
+
+// listOrgs follows user/orgs pagination. It stops once X-Total-Count items
+// have been read, or, when the header is absent, on an empty or short page.
+// The total is preferred because a server whose MAX_RESPONSE_ITEMS is below
+// giteaPageLimit returns full pages that look short.
+func (gc *GiteaClient) listOrgs() ([]GiteaOrganization, error) {
+	var all []GiteaOrganization
+	for page := 1; ; page++ {
+		var orgs []GiteaOrganization
+		path := fmt.Sprintf("user/orgs?page=%d&limit=%d", page, giteaPageLimit)
+		header, err := gc.doWithHeader(http.MethodGet, path, nil, &orgs)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, orgs...)
+		if len(orgs) == 0 {
+			return all, nil
+		}
+		if total, err := strconv.Atoi(header.Get("X-Total-Count")); err == nil {
+			if len(all) >= total {
+				return all, nil
+			}
+			continue
+		}
+		if len(orgs) < giteaPageLimit {
+			return all, nil
+		}
+	}
 }
 
 // CreateRepository creates a repository for owner. Gitea and Forgejo accept
@@ -149,17 +183,22 @@ func (gc *GiteaClient) post(path string, body, out any) error {
 }
 
 func (gc *GiteaClient) do(method, pathAndQuery string, body, out any) error {
+	_, err := gc.doWithHeader(method, pathAndQuery, body, out)
+	return err
+}
+
+func (gc *GiteaClient) doWithHeader(method, pathAndQuery string, body, out any) (http.Header, error) {
 	var reader io.Reader
 	if body != nil {
 		buf, err := json.Marshal(body)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		reader = bytes.NewReader(buf)
 	}
 	req, err := http.NewRequest(method, gc.baseUrl+pathAndQuery, reader)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Authorization", "token "+gc.token)
 	req.Header.Set("Accept", "application/json")
@@ -168,15 +207,15 @@ func (gc *GiteaClient) do(method, pathAndQuery string, body, out any) error {
 	}
 	resp, err := gc.http.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	rb, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("%s %s %s: %d %s", gc.provider, method, pathAndQuery, resp.StatusCode, strings.TrimSpace(string(rb)))
+		return resp.Header, fmt.Errorf("%s %s %s: %d %s", gc.provider, method, pathAndQuery, resp.StatusCode, strings.TrimSpace(string(rb)))
 	}
 	if out == nil {
-		return nil
+		return resp.Header, nil
 	}
-	return json.Unmarshal(rb, out)
+	return resp.Header, json.Unmarshal(rb, out)
 }

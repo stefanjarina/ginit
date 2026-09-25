@@ -15,10 +15,14 @@ import (
 
 const adoAPIVersion = "7.1"
 
+// adoContinuationHeader carries the token for the next page of a list call.
+const adoContinuationHeader = "x-ms-continuationtoken"
+
 type adoProjectsResponse struct {
 	Value []struct {
 		Name string `json:"name"`
 	} `json:"value"`
+	ContinuationToken string `json:"continuationToken"`
 }
 
 type adoProject struct {
@@ -68,20 +72,40 @@ func (ac *AdoClient) Connect() error {
 	return ac.get("projects?"+q.Encode(), nil)
 }
 
-// GetProjects returns the names of every project the authenticated user can see.
+// GetProjects returns the names of every project the authenticated user can see,
+// following continuation tokens until the server stops sending one.
 func (ac *AdoClient) GetProjects() ([]string, error) {
-	q := url.Values{"stateFilter": {"WellFormed"}}
-	var resp adoProjectsResponse
-	if err := ac.get("projects?"+q.Encode(), &resp); err != nil {
-		return nil, err
-	}
-	out := make([]string, 0, len(resp.Value))
-	for _, p := range resp.Value {
-		if p.Name != "" {
-			out = append(out, p.Name)
+	out := []string{}
+	seen := map[string]bool{}
+	token := ""
+	for {
+		q := url.Values{"stateFilter": {"WellFormed"}}
+		if token != "" {
+			q.Set("continuationToken", token)
 		}
+		var resp adoProjectsResponse
+		header, err := ac.send(http.MethodGet, "", "projects?"+q.Encode(), nil, &resp)
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range resp.Value {
+			if p.Name != "" {
+				out = append(out, p.Name)
+			}
+		}
+
+		token = header.Get(adoContinuationHeader)
+		if token == "" {
+			token = resp.ContinuationToken
+		}
+		if token == "" {
+			return out, nil
+		}
+		if seen[token] {
+			return nil, fmt.Errorf("azure GET projects: continuation token %q repeated", token)
+		}
+		seen[token] = true
 	}
-	return out, nil
 }
 
 // CreateRepository creates a git repo under the given project and returns its
@@ -118,11 +142,17 @@ func (ac *AdoClient) postProject(project, path string, body, out any) error {
 }
 
 func (ac *AdoClient) do(method, projectPrefix, pathAndQuery string, body, out any) error {
+	_, err := ac.send(method, projectPrefix, pathAndQuery, body, out)
+	return err
+}
+
+// send performs the request and returns the response headers alongside any error.
+func (ac *AdoClient) send(method, projectPrefix, pathAndQuery string, body, out any) (http.Header, error) {
 	var reader io.Reader
 	if body != nil {
 		buf, err := json.Marshal(body)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		reader = bytes.NewReader(buf)
 	}
@@ -134,7 +164,7 @@ func (ac *AdoClient) do(method, projectPrefix, pathAndQuery string, body, out an
 	endpoint += "/_apis/" + pathAndQuery
 	parsed, err := url.Parse(endpoint)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	q := parsed.Query()
 	q.Set("api-version", adoAPIVersion)
@@ -142,7 +172,7 @@ func (ac *AdoClient) do(method, projectPrefix, pathAndQuery string, body, out an
 
 	req, err := http.NewRequest(method, parsed.String(), reader)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.SetBasicAuth("", ac.token)
 	req.Header.Set("Accept", "application/json")
@@ -151,15 +181,15 @@ func (ac *AdoClient) do(method, projectPrefix, pathAndQuery string, body, out an
 	}
 	resp, err := ac.http.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	rb, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("azure %s %s: %d %s", method, pathAndQuery, resp.StatusCode, strings.TrimSpace(string(rb)))
+		return resp.Header, fmt.Errorf("azure %s %s: %d %s", method, pathAndQuery, resp.StatusCode, strings.TrimSpace(string(rb)))
 	}
 	if out == nil {
-		return nil
+		return resp.Header, nil
 	}
-	return json.Unmarshal(rb, out)
+	return resp.Header, json.Unmarshal(rb, out)
 }
