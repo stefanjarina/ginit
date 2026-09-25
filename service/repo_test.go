@@ -114,8 +114,59 @@ func TestCommitLocalGitEmptyTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := svc.CommitLocalGit(dir)
-	if err == nil || !strings.Contains(err.Error(), "nothing to commit") {
-		t.Fatalf("CommitLocalGit() error = %v, want nothing to commit error", err)
+	if err == nil || !strings.Contains(err.Error(), "the directory is empty") {
+		t.Fatalf("CommitLocalGit() error = %v, want empty directory error", err)
+	}
+}
+
+func TestCommitLocalGitEverythingIgnored(t *testing.T) {
+	cases := []struct {
+		name   string
+		ignore []string
+		files  []string
+	}{
+		// .gitignore ignores itself and the only other file.
+		{name: "gitignore written", ignore: []string{".gitignore", "*.log"}, files: []string{"app.log"}},
+		// No .gitignore, but .git/info/exclude hides the file.
+		{name: "files without gitignore", files: []string{"app.log"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateGit(t)
+			t.Setenv("GIT_AUTHOR_NAME", "Test")
+			t.Setenv("GIT_AUTHOR_EMAIL", "test@example.com")
+			t.Setenv("GIT_COMMITTER_NAME", "Test")
+			t.Setenv("GIT_COMMITTER_EMAIL", "test@example.com")
+			dir := t.TempDir()
+			svc := newTestService()
+
+			if err := svc.PrepareLocalGit(dir); err != nil {
+				t.Fatalf("PrepareLocalGit() error = %v", err)
+			}
+			for _, f := range tc.files {
+				if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := gitops.WriteGitignore(dir, tc.ignore, ""); err != nil {
+				t.Fatal(err)
+			}
+			if tc.ignore == nil {
+				exclude := filepath.Join(dir, ".git", "info", "exclude")
+				if err := os.MkdirAll(filepath.Dir(exclude), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(exclude, []byte("*.log\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			err := svc.CommitLocalGit(dir)
+			if err == nil || !strings.Contains(err.Error(), "every file in the directory is ignored") ||
+				!strings.Contains(err.Error(), ".gitignore") {
+				t.Fatalf("CommitLocalGit() error = %v, want ignored files error", err)
+			}
+		})
 	}
 }
 

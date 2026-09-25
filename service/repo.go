@@ -193,8 +193,7 @@ func (r *RepoService) CommitLocalGit(dir string) error {
 	commit := func() error {
 		if err := gitops.Commit(dir, "initial commit"); err != nil {
 			if errors.Is(err, gitops.ErrNothingToCommit) {
-				return gerrors.NewHint("nothing to commit: the directory is empty and no .gitignore was generated",
-					"add a file (e.g. README.md) or select gitignore templates", nil)
+				return nothingToCommitError(dir)
 			}
 			return err
 		}
@@ -213,6 +212,24 @@ func (r *RepoService) CommitLocalGit(dir string) error {
 	}
 	console.Success("✓ Creating initial commit")
 	return nil
+}
+
+// nothingToCommitError explains an empty index. A directory that holds only
+// .git gets the "add a file" hint; any other entry, .gitignore included, means
+// .gitignore excluded everything.
+func nothingToCommitError(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return gerrors.New("read directory", err)
+	}
+	for _, e := range entries {
+		if e.Name() != ".git" {
+			return gerrors.NewHint("nothing to commit: every file in the directory is ignored",
+				"check .gitignore; the selected templates or custom ignores exclude all files", nil)
+		}
+	}
+	return gerrors.NewHint("nothing to commit: the directory is empty and no .gitignore was generated",
+		"add a file (e.g. README.md) or select gitignore templates", nil)
 }
 
 // checkSensitiveFiles asks before committing staged paths that likely hold
