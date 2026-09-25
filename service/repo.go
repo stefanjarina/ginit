@@ -303,7 +303,16 @@ func (r *RepoService) handleGithub() (*ProjectInfo, error) {
 		return nil, gerrors.NewProvider("github", "authenticate", err)
 	}
 
-	pi, err := prompts.AskForProjectInfo("github", availableTypes, r.Accessibility)
+	owners, err := githubOwners(client)
+	if err != nil {
+		return nil, err
+	}
+	owner, err := prompts.AskForGithubOwner(owners, r.Accessibility)
+	if err != nil {
+		return nil, err
+	}
+
+	pi, err := prompts.AskForProjectInfo("github", owner.Visibilities, availableTypes, r.Accessibility)
 	if err != nil {
 		return nil, err
 	}
@@ -314,7 +323,7 @@ func (r *RepoService) handleGithub() (*ProjectInfo, error) {
 
 	var urls api.CloneURLs
 	if err := console.Run("Creating repo on GitHub", func() error {
-		u, e := client.CreateRepository(pi.Name, pi.Description, pi.Visibility)
+		u, e := client.CreateRepository(owner, pi.Name, pi.Description, pi.Visibility)
 		urls = u
 		return e
 	}); err != nil {
@@ -326,6 +335,32 @@ func (r *RepoService) handleGithub() (*ProjectInfo, error) {
 	}
 	pi.RemoteUrl = remoteUrl
 	return pi, nil
+}
+
+// githubOwners lists the accounts a GitHub repository can be created under.
+// When the organizations cannot be listed (for example the token lacks the
+// read:org scope) it warns and offers only the authenticated user.
+func githubOwners(client githubOwnerLister) ([]api.GithubOwner, error) {
+	var owners []api.GithubOwner
+	err := console.RunOptional("Fetching GitHub organizations", func() error {
+		o, e := client.GetOwners()
+		owners = o
+		return e
+	})
+	if err == nil {
+		return owners, nil
+	}
+	console.Warning("Continuing with your user account only")
+	user, err := client.UserOwner()
+	if err != nil {
+		return nil, gerrors.NewProvider("github", "list owners", err)
+	}
+	return []api.GithubOwner{user}, nil
+}
+
+type githubOwnerLister interface {
+	GetOwners() ([]api.GithubOwner, error)
+	UserOwner() (api.GithubOwner, error)
 }
 
 func (r *RepoService) handleAzure() (*ProjectInfo, error) {
@@ -364,7 +399,7 @@ func (r *RepoService) handleAzure() (*ProjectInfo, error) {
 		return nil, gerrors.NewProvider("azure", "list projects", err)
 	}
 
-	pi, err := prompts.AskForProjectInfo("azure", availableTypes, r.Accessibility)
+	pi, err := prompts.AskForProjectInfo("azure", nil, availableTypes, r.Accessibility)
 	if err != nil {
 		return nil, err
 	}
@@ -405,7 +440,7 @@ func (r *RepoService) handleGitlab() (*ProjectInfo, error) {
 
 	// Project info (incl. visibility) first,
 	// THEN authenticate + GetGroups, because the group query is filtered by visibility.
-	pi, err := prompts.AskForProjectInfo("gitlab", availableTypes, r.Accessibility)
+	pi, err := prompts.AskForProjectInfo("gitlab", nil, availableTypes, r.Accessibility)
 	if err != nil {
 		return nil, err
 	}
@@ -492,7 +527,7 @@ func (r *RepoService) handleBitbucket() (*ProjectInfo, error) {
 		return nil, err
 	}
 
-	pi, err := prompts.AskForProjectInfo("bitbucket", availableTypes, r.Accessibility)
+	pi, err := prompts.AskForProjectInfo("bitbucket", nil, availableTypes, r.Accessibility)
 	if err != nil {
 		return nil, err
 	}
@@ -544,7 +579,7 @@ func (r *RepoService) handleGiteaCompatible(provider string) (*ProjectInfo, erro
 		return nil, err
 	}
 
-	pi, err := prompts.AskForProjectInfo(provider, availableTypes, r.Accessibility)
+	pi, err := prompts.AskForProjectInfo(provider, nil, availableTypes, r.Accessibility)
 	if err != nil {
 		return nil, err
 	}

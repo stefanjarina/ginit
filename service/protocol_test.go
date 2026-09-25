@@ -27,7 +27,7 @@ func fakeProvider(t *testing.T, body string) *httptest.Server {
 
 func createGithub(t *testing.T, body string) api.CloneURLs {
 	srv := fakeProvider(t, body)
-	urls, err := api.NewGithubClient("secret", srv.URL).CreateRepository("demo", "", "private")
+	urls, err := api.NewGithubClient("secret", srv.URL).CreateRepository(api.GithubOwner{Login: "alice"}, "demo", "", "private")
 	if err != nil {
 		t.Fatalf("github CreateRepository() error = %v", err)
 	}
