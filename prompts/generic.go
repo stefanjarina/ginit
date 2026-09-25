@@ -111,13 +111,20 @@ func GetGitIgnoreGroup(availableTypes []string, filesVal *[]string, typesVal *[]
 	return huh.NewGroup(fields...).WithHeight(10), nil
 }
 
+func tokenTitle(provider string) string {
+	if provider == "bitbucket" {
+		return "Enter your Bitbucket API token (Cloud) or HTTP access token (Data Center / Server)"
+	}
+	return "Enter your " + provider + " Personal Access Token"
+}
+
 // AskForToken runs a single-input form for a PAT.
 func AskForToken(provider string, accessibility bool) (string, error) {
 	var token string
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
-				Title("Enter your " + provider + " Personal Access Token").
+				Title(tokenTitle(provider)).
 				EchoMode(huh.EchoModePassword).
 				Value(&token).
 				Validate(required(provider + " token")),
