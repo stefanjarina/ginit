@@ -96,6 +96,21 @@ func TestConfigDefaultBranch(t *testing.T) {
 	}
 }
 
+func TestConfigSetRejectsRemovedEncryptFlag(t *testing.T) {
+	config.Current = &config.Config{DefaultBranch: "main", Providers: []config.Provider{{Name: "github", Options: map[string]string{}}}}
+	config.CurrentPath = filepath.Join(t.TempDir(), "ginit.yaml")
+
+	for _, flag := range []string{"--encrypt", "-e"} {
+		_, err := executeConfig("set", flag, "github", "token", "secret")
+		if err == nil || !strings.Contains(err.Error(), "unknown") {
+			t.Fatalf("config set %s error = %v, want unknown flag error", flag, err)
+		}
+		if got := config.Current.GetValue("github", "token"); got != "" {
+			t.Fatalf("config set %s stored token = %q, want nothing stored", flag, got)
+		}
+	}
+}
+
 func TestConfigAllOptionalProvider(t *testing.T) {
 	config.Current = &config.Config{
 		DefaultBranch: "main",

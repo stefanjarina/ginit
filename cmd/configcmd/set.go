@@ -8,8 +8,6 @@ import (
 	"github.com/stefanjarina/ginit/console"
 )
 
-var setEncrypt bool
-
 var setCmd = &cobra.Command{
 	Use:   "set (defaultbranch <branch> | <provider> <key> <value>)",
 	Short: "Set a configuration key to a value",
@@ -30,10 +28,6 @@ Otherwise set <key> on <provider> (token, baseurl, or a provider option).`,
 		return cobra.ExactArgs(3)(cmd, args)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		if setEncrypt {
-			console.Warning("--encrypt is currently a no-op (token storage is plaintext); value will be stored as-is.")
-		}
-
 		var err error
 		if config.IsDefaultBranchKey(args[0]) {
 			err = config.Current.SetDefaultBranch(args[1])
@@ -50,8 +44,4 @@ Otherwise set <key> on <provider> (token, baseurl, or a provider option).`,
 		}
 		console.Success("Saved")
 	},
-}
-
-func init() {
-	setCmd.Flags().BoolVarP(&setEncrypt, "encrypt", "e", false, "Encrypt the value (no-op for now; reserved for future use)")
 }

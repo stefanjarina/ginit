@@ -23,8 +23,7 @@ ginit config set (defaultbranch <branch> | <provider> <key> <value>) [flags]
 ### Options
 
 ```
-  -e, --encrypt   Encrypt the value (no-op for now; reserved for future use)
-  -h, --help      help for set
+  -h, --help   help for set
 ```
 
 ### Options inherited from parent commands
