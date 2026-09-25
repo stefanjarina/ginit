@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"runtime"
 
 	"github.com/stefanjarina/ginit/api"
 	"github.com/stefanjarina/ginit/api/gitignoreio"
@@ -19,8 +18,37 @@ import (
 // ProjectInfo is re-exported from the model package for callers' convenience.
 type ProjectInfo = model.ProjectInfo
 
-// PreferSshUrl returns true when the platform should default to SSH clone URLs.
-func PreferSshUrl() bool { return runtime.GOOS != "windows" }
+// PreferSshUrl reports whether origin should use the SSH clone URL. It is the
+// single place that reads the protocol setting; unset means SSH off Windows
+// and HTTPS on Windows.
+func PreferSshUrl(cfg *config.Config) (bool, error) {
+	protocol, err := cfg.EffectiveProtocol()
+	if err != nil {
+		return false, gerrors.NewHint(err.Error(),
+			fmt.Sprintf("fix it with: ginit config set %s %s|%s", config.ProtocolKey, config.ProtocolSSH, config.ProtocolHTTPS), nil)
+	}
+	return protocol == config.ProtocolSSH, nil
+}
+
+// SelectRemoteUrl picks the clone URL for origin. When the preferred URL is
+// missing it falls back to the other one and warns. It never returns an
+// empty URL without an error.
+func SelectRemoteUrl(provider string, urls api.CloneURLs, preferSsh bool) (string, error) {
+	preferred, other := urls.HTTPS, urls.SSH
+	preferredName, otherName := config.ProtocolHTTPS, config.ProtocolSSH
+	if preferSsh {
+		preferred, other = urls.SSH, urls.HTTPS
+		preferredName, otherName = config.ProtocolSSH, config.ProtocolHTTPS
+	}
+	if preferred != "" {
+		return preferred, nil
+	}
+	if other != "" {
+		console.Warning(fmt.Sprintf("%s returned no %s clone URL; using the %s URL %s", provider, preferredName, otherName, other))
+		return other, nil
+	}
+	return "", gerrors.NewProvider(provider, "created repo has no clone URL", nil)
+}
 
 // RepoService orchestrates the end-to-end init flow.
 type RepoService struct {
@@ -63,6 +91,10 @@ func New(cfg *config.Config, cfgPath string, accessibility bool) *RepoService {
 
 // CreateRemoteRepo dispatches to the provider-specific handler.
 func (r *RepoService) CreateRemoteRepo(provider string) (*ProjectInfo, error) {
+	// Reject an invalid protocol before anything is created on the host.
+	if _, err := PreferSshUrl(r.Cfg); err != nil {
+		return nil, err
+	}
 	switch provider {
 	case "github":
 		return r.handleGithub()
@@ -77,6 +109,15 @@ func (r *RepoService) CreateRemoteRepo(provider string) (*ProjectInfo, error) {
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", provider)
 	}
+}
+
+// remoteUrl selects the origin URL from the clone URLs the provider returned.
+func (r *RepoService) remoteUrl(provider string, urls api.CloneURLs) (string, error) {
+	preferSsh, err := PreferSshUrl(r.Cfg)
+	if err != nil {
+		return "", err
+	}
+	return SelectRemoteUrl(provider, urls, preferSsh)
 }
 
 func (r *RepoService) beforeCreate(pi *ProjectInfo) error {
@@ -271,15 +312,19 @@ func (r *RepoService) handleGithub() (*ProjectInfo, error) {
 		return nil, err
 	}
 
-	var url string
+	var urls api.CloneURLs
 	if err := console.Run("Creating repo on GitHub", func() error {
 		u, e := client.CreateRepository(pi.Name, pi.Description, pi.Visibility)
-		url = u
+		urls = u
 		return e
 	}); err != nil {
 		return nil, err
 	}
-	pi.RemoteUrl = url
+	remoteUrl, err := r.remoteUrl("github", urls)
+	if err != nil {
+		return nil, err
+	}
+	pi.RemoteUrl = remoteUrl
 	return pi, nil
 }
 
@@ -333,15 +378,19 @@ func (r *RepoService) handleAzure() (*ProjectInfo, error) {
 		return nil, err
 	}
 
-	var url string
+	var urls api.CloneURLs
 	if err := console.Run("Creating repo on Azure DevOps", func() error {
 		u, e := client.CreateRepository(project, pi.Name)
-		url = u
+		urls = u
 		return e
 	}); err != nil {
 		return nil, err
 	}
-	pi.RemoteUrl = url
+	remoteUrl, err := r.remoteUrl("azure", urls)
+	if err != nil {
+		return nil, err
+	}
+	pi.RemoteUrl = remoteUrl
 	return pi, nil
 }
 
@@ -383,15 +432,19 @@ func (r *RepoService) handleGitlab() (*ProjectInfo, error) {
 		return nil, err
 	}
 
-	var url string
+	var urls api.CloneURLs
 	if err := console.Run("Creating repo on GitLab", func() error {
 		u, e := client.CreateRepository(groupId, pi.Name, pi.Description, pi.Visibility)
-		url = u
+		urls = u
 		return e
 	}); err != nil {
 		return nil, err
 	}
-	pi.RemoteUrl = url
+	remoteUrl, err := r.remoteUrl("gitlab", urls)
+	if err != nil {
+		return nil, err
+	}
+	pi.RemoteUrl = remoteUrl
 	return pi, nil
 }
 
@@ -456,12 +509,16 @@ func (r *RepoService) handleBitbucket() (*ProjectInfo, error) {
 		return nil, err
 	}
 
-	var remoteUrl string
+	var urls api.CloneURLs
 	if err := console.Run("Creating repo on Bitbucket", func() error {
 		u, e := client.CreateRepository(workspace, project, pi.Name, pi.Description, pi.Visibility)
-		remoteUrl = u
+		urls = u
 		return e
 	}); err != nil {
+		return nil, err
+	}
+	remoteUrl, err := r.remoteUrl("bitbucket", urls)
+	if err != nil {
 		return nil, err
 	}
 	pi.RemoteUrl = remoteUrl
@@ -504,12 +561,16 @@ func (r *RepoService) handleGiteaCompatible(provider string) (*ProjectInfo, erro
 		return nil, err
 	}
 
-	var remoteUrl string
+	var urls api.CloneURLs
 	if err := console.Run("Creating repo on "+provider, func() error {
 		u, e := client.CreateRepository(owner, pi.Name, pi.Description, pi.Visibility)
-		remoteUrl = u
+		urls = u
 		return e
 	}); err != nil {
+		return nil, err
+	}
+	remoteUrl, err := r.remoteUrl(provider, urls)
+	if err != nil {
 		return nil, err
 	}
 	pi.RemoteUrl = remoteUrl

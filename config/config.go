@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	gerrors "github.com/stefanjarina/ginit/errors"
@@ -11,8 +12,11 @@ import (
 )
 
 type Config struct {
-	DefaultBranch string     `yaml:"defaultbranch"`
-	Providers     []Provider `yaml:"providers"`
+	DefaultBranch string `yaml:"defaultbranch"`
+	// Protocol selects the clone URL used for origin: "ssh" or "https".
+	// Empty means the platform default, see DefaultProtocol.
+	Protocol  string     `yaml:"protocol,omitempty"`
+	Providers []Provider `yaml:"providers"`
 }
 
 // providerDefaults seeds known providers with sensible BaseUrls.
@@ -155,4 +159,54 @@ func (c *Config) SetDefaultBranch(branch string) error {
 	}
 	c.DefaultBranch = branch
 	return nil
+}
+
+// ProtocolKey is the config command key for the top-level clone URL protocol.
+// It is addressed without a provider.
+const ProtocolKey = "protocol"
+
+const (
+	ProtocolSSH   = "ssh"
+	ProtocolHTTPS = "https"
+)
+
+// IsProtocolKey reports whether key names the top-level clone URL protocol.
+func IsProtocolKey(key string) bool {
+	return strings.EqualFold(key, ProtocolKey)
+}
+
+// DefaultProtocol is used when protocol is not set: SSH everywhere except
+// Windows, where HTTPS works with the bundled credential manager.
+func DefaultProtocol() string {
+	if runtime.GOOS == "windows" {
+		return ProtocolHTTPS
+	}
+	return ProtocolSSH
+}
+
+// NormalizeProtocol lowercases and validates a protocol value.
+func NormalizeProtocol(protocol string) (string, error) {
+	p := strings.ToLower(strings.TrimSpace(protocol))
+	if p != ProtocolSSH && p != ProtocolHTTPS {
+		return "", fmt.Errorf("%s must be %q or %q, got %q", ProtocolKey, ProtocolSSH, ProtocolHTTPS, protocol)
+	}
+	return p, nil
+}
+
+func (c *Config) SetProtocol(protocol string) error {
+	p, err := NormalizeProtocol(protocol)
+	if err != nil {
+		return err
+	}
+	c.Protocol = p
+	return nil
+}
+
+// EffectiveProtocol returns the configured protocol, or DefaultProtocol when
+// it is unset. An invalid value in the file is an error rather than a guess.
+func (c *Config) EffectiveProtocol() (string, error) {
+	if c.Protocol == "" {
+		return DefaultProtocol(), nil
+	}
+	return NormalizeProtocol(c.Protocol)
 }

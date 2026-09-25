@@ -99,3 +99,32 @@ func TestSetDefaultBranchRejectsEmpty(t *testing.T) {
 		t.Fatalf("DefaultBranch = %q, want main", cfg.DefaultBranch)
 	}
 }
+
+func TestEffectiveProtocol(t *testing.T) {
+	tests := []struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{in: "", want: DefaultProtocol()},
+		{in: "ssh", want: "ssh"},
+		{in: "HTTPS", want: "https"},
+		{in: "git", wantErr: true},
+	}
+	for _, tt := range tests {
+		got, err := (&Config{Protocol: tt.in}).EffectiveProtocol()
+		if (err != nil) != tt.wantErr || got != tt.want {
+			t.Errorf("EffectiveProtocol(%q) = %q, %v; want %q, error %v", tt.in, got, err, tt.want, tt.wantErr)
+		}
+	}
+}
+
+func TestSetProtocolRejectsUnknownValue(t *testing.T) {
+	cfg := &Config{Protocol: "ssh"}
+	if err := cfg.SetProtocol("ftp"); err == nil {
+		t.Fatal("SetProtocol(ftp) error = nil, want error")
+	}
+	if cfg.Protocol != "ssh" {
+		t.Fatalf("protocol = %q, want ssh unchanged", cfg.Protocol)
+	}
+}

@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"runtime"
 	"strings"
 	"time"
 
@@ -119,7 +118,7 @@ func (gc *GiteaClient) GetOwners() ([]GiteaOwner, error) {
 	return owners, nil
 }
 
-func (gc *GiteaClient) CreateRepository(owner GiteaOwner, name, description, visibility string) (string, error) {
+func (gc *GiteaClient) CreateRepository(owner GiteaOwner, name, description, visibility string) (CloneURLs, error) {
 	body := map[string]any{
 		"name":        name,
 		"description": description,
@@ -136,18 +135,9 @@ func (gc *GiteaClient) CreateRepository(owner GiteaOwner, name, description, vis
 	}
 	var resp giteaRepoResponse
 	if err := gc.post(path, body, &resp); err != nil {
-		return "", gerrors.NewProvider(gc.provider, "create repository", err)
+		return CloneURLs{}, gerrors.NewProvider(gc.provider, "create repository", err)
 	}
-	if runtime.GOOS == "windows" && resp.CloneURL != "" {
-		return resp.CloneURL, nil
-	}
-	if resp.SSHURL != "" {
-		return resp.SSHURL, nil
-	}
-	if resp.CloneURL != "" {
-		return resp.CloneURL, nil
-	}
-	return "", gerrors.NewProvider(gc.provider, "created repo has no URL", nil)
+	return CloneURLs{SSH: resp.SSHURL, HTTPS: resp.CloneURL}, nil
 }
 
 func (gc *GiteaClient) get(pathAndQuery string, out any) error {

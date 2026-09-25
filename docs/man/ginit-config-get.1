@@ -6,11 +6,15 @@ ginit-config-get - Get value of a configuration key
 
 
 .SH SYNOPSIS
-\fBginit config get (defaultbranch |  ) [flags]\fP
+\fBginit config get (defaultbranch | protocol |  ) [flags]\fP
 
 
 .SH DESCRIPTION
-Get value of a configuration key
+Get value of a configuration key.
+
+.PP
+"protocol" prints the effective clone URL protocol, including the platform
+default when it is not set.
 
 
 .SH OPTIONS
@@ -38,6 +42,7 @@ Get value of a configuration key
 .SH EXAMPLE
 .EX
   ginit config get defaultbranch
+  ginit config get protocol
   ginit config get github baseurl
 .EE
 

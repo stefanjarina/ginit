@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"runtime"
 	"testing"
 )
 
@@ -81,17 +80,14 @@ func TestAdoClientConnectGetProjectsAndCreateRepository(t *testing.T) {
 		t.Fatalf("projects = %#v", projects)
 	}
 
-	remoteURL, err := client.CreateRepository("MyProject", "demo")
+	remoteURLs, err := client.CreateRepository("MyProject", "demo")
 	if err != nil {
 		t.Fatalf("CreateRepository() error = %v", err)
 	}
 
-	wantURL := "git@ssh.dev.azure.com:v3/contoso/MyProject/demo"
-	if runtime.GOOS == "windows" {
-		wantURL = "https://dev.azure.com/contoso/MyProject/_git/demo"
-	}
-	if remoteURL != wantURL {
-		t.Fatalf("remoteURL = %q, want %q", remoteURL, wantURL)
+	wantURLs := CloneURLs{SSH: "git@ssh.dev.azure.com:v3/contoso/MyProject/demo", HTTPS: "https://dev.azure.com/contoso/MyProject/_git/demo"}
+	if remoteURLs != wantURLs {
+		t.Fatalf("clone URLs = %#v, want %#v", remoteURLs, wantURLs)
 	}
 	project, ok := createBody["project"].(map[string]any)
 	if createBody["name"] != "demo" || !ok || project["id"] != "proj-id" || project["name"] != "MyProject" {

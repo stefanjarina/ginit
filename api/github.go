@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"runtime"
 	"strings"
 	"time"
 
@@ -52,8 +51,8 @@ func (gc *GithubClient) Connect() error {
 }
 
 // CreateRepository creates the repo on github.com under the authenticated user
-// and returns the SSH URL on Unix (HTTPS clone URL on Windows).
-func (gc *GithubClient) CreateRepository(name, description, visibility string) (string, error) {
+// and returns its clone URLs.
+func (gc *GithubClient) CreateRepository(name, description, visibility string) (CloneURLs, error) {
 	body := map[string]any{
 		"name":        name,
 		"description": description,
@@ -61,12 +60,9 @@ func (gc *GithubClient) CreateRepository(name, description, visibility string) (
 	}
 	var resp githubRepoResponse
 	if err := gc.post("user/repos", body, &resp); err != nil {
-		return "", gerrors.NewProvider("github", "create repository", err)
+		return CloneURLs{}, gerrors.NewProvider("github", "create repository", err)
 	}
-	if runtime.GOOS == "windows" {
-		return resp.CloneURL, nil
-	}
-	return resp.SSHURL, nil
+	return CloneURLs{SSH: resp.SSHURL, HTTPS: resp.CloneURL}, nil
 }
 
 func (gc *GithubClient) get(pathAndQuery string, out any) error {

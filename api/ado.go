@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"runtime"
 	"strings"
 	"time"
 
@@ -85,12 +84,12 @@ func (ac *AdoClient) GetProjects() ([]string, error) {
 	return out, nil
 }
 
-// CreateRepository creates a git repo under the given project. Returns SSH URL
-// on Unix or RemoteUrl (HTTPS) on Windows. Mirrors AzureService.CreateRepository.
-func (ac *AdoClient) CreateRepository(projectName, repoName string) (string, error) {
+// CreateRepository creates a git repo under the given project and returns its
+// clone URLs (sshUrl and the HTTPS remoteUrl).
+func (ac *AdoClient) CreateRepository(projectName, repoName string) (CloneURLs, error) {
 	var project adoProject
 	if err := ac.get("projects/"+url.PathEscape(projectName), &project); err != nil {
-		return "", gerrors.NewProvider("azure", "fetch project '"+projectName+"'", err)
+		return CloneURLs{}, gerrors.NewProvider("azure", "fetch project '"+projectName+"'", err)
 	}
 
 	body := map[string]any{
@@ -103,20 +102,11 @@ func (ac *AdoClient) CreateRepository(projectName, repoName string) (string, err
 	var created adoRepoResponse
 	if err := ac.postProject(projectName, "git/repositories", body, &created); err != nil {
 		if strings.Contains(err.Error(), "TF400948") {
-			return "", gerrors.NewProvider("azure", "repository '"+repoName+"' already exists", err)
+			return CloneURLs{}, gerrors.NewProvider("azure", "repository '"+repoName+"' already exists", err)
 		}
-		return "", gerrors.NewProvider("azure", "create repository", err)
+		return CloneURLs{}, gerrors.NewProvider("azure", "create repository", err)
 	}
-	if runtime.GOOS == "windows" && created.RemoteURL != "" {
-		return created.RemoteURL, nil
-	}
-	if created.SshURL != "" {
-		return created.SshURL, nil
-	}
-	if created.RemoteURL != "" {
-		return created.RemoteURL, nil
-	}
-	return "", gerrors.NewProvider("azure", "created repo has no URL", nil)
+	return CloneURLs{SSH: created.SshURL, HTTPS: created.RemoteURL}, nil
 }
 
 func (ac *AdoClient) get(pathAndQuery string, out any) error {

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"runtime"
 	"testing"
 )
 
@@ -58,17 +57,14 @@ func TestBitbucketClientEndpointsAuthAndCreateBody(t *testing.T) {
 	if len(projects) != 1 || projects[0].Key != "PRJ" {
 		t.Fatalf("projects = %#v", projects)
 	}
-	remoteURL, err := client.CreateRepository("team", "PRJ", "My Demo", "description", "private")
+	remoteURLs, err := client.CreateRepository("team", "PRJ", "My Demo", "description", "private")
 	if err != nil {
 		t.Fatalf("CreateRepository() error = %v", err)
 	}
 
-	wantURL := "git@bitbucket.org:team/demo.git"
-	if runtime.GOOS == "windows" {
-		wantURL = "https://bitbucket.org/team/demo.git"
-	}
-	if remoteURL != wantURL {
-		t.Fatalf("remoteURL = %q, want %q", remoteURL, wantURL)
+	wantURLs := CloneURLs{SSH: "git@bitbucket.org:team/demo.git", HTTPS: "https://bitbucket.org/team/demo.git"}
+	if remoteURLs != wantURLs {
+		t.Fatalf("clone URLs = %#v, want %#v", remoteURLs, wantURLs)
 	}
 	if createBody["scm"] != "git" || createBody["name"] != "My Demo" || createBody["description"] != "description" || createBody["is_private"] != true {
 		t.Fatalf("create body = %#v", createBody)
