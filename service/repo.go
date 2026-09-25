@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/stefanjarina/ginit/api"
 	"github.com/stefanjarina/ginit/api/gitignoreio"
@@ -69,6 +70,10 @@ type RepoService struct {
 	// ConfirmRemoteUpdate asks whether an origin currently pointing at
 	// current should be changed to url.
 	ConfirmRemoteUpdate func(current, url string) (bool, error)
+
+	// ConfirmSensitiveFiles asks whether the initial commit may include
+	// staged paths that likely contain secrets.
+	ConfirmSensitiveFiles func(paths []string) (bool, error)
 }
 
 // GitignoreClient is the subset of the gitignore.io client used by the init flow.
@@ -85,6 +90,9 @@ func New(cfg *config.Config, cfgPath string, accessibility bool) *RepoService {
 		GitignoreIo:   gitignoreio.NewClient(),
 		ConfirmRemoteUpdate: func(current, url string) (bool, error) {
 			return prompts.AskToUpdateRemote("origin", current, url, accessibility)
+		},
+		ConfirmSensitiveFiles: func(paths []string) (bool, error) {
+			return prompts.AskToCommitSensitiveFiles(paths, accessibility)
 		},
 	}
 }
@@ -159,11 +167,17 @@ func (r *RepoService) PrepareLocalGit(dir string) error {
 }
 
 // CommitLocalGit stages everything in dir and creates the initial commit.
+// When staged paths look like secrets it lists them and asks first; a "no"
+// returns an error before anything is committed.
 func (r *RepoService) CommitLocalGit(dir string) error {
+	if err := console.Run("Staging files", func() error { return gitops.AddAll(dir) }); err != nil {
+		return err
+	}
+	if err := r.checkSensitiveFiles(dir); err != nil {
+		return err
+	}
+
 	commit := func() error {
-		if err := gitops.AddAll(dir); err != nil {
-			return err
-		}
 		if err := gitops.Commit(dir, "initial commit"); err != nil {
 			if errors.Is(err, gitops.ErrNothingToCommit) {
 				return gerrors.NewHint("nothing to commit: the directory is empty and no .gitignore was generated",
@@ -186,6 +200,36 @@ func (r *RepoService) CommitLocalGit(dir string) error {
 	}
 	console.Success("✓ Creating initial commit")
 	return nil
+}
+
+// checkSensitiveFiles asks before committing staged paths that likely hold
+// secrets and returns an error when the user declines.
+func (r *RepoService) checkSensitiveFiles(dir string) error {
+	staged, err := gitops.StagedFiles(dir)
+	if err != nil {
+		return err
+	}
+	found := gitops.SensitivePaths(staged)
+	if len(found) == 0 {
+		return nil
+	}
+	console.Warning("Files that may contain secrets are staged for the initial commit:\n  " + strings.Join(found, "\n  "))
+	ok, err := r.confirmSensitiveFiles(found)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return gerrors.NewHint("initial commit cancelled: files that may contain secrets were staged",
+			"move them out of the directory or add them to .gitignore, then run ginit again", nil)
+	}
+	return nil
+}
+
+func (r *RepoService) confirmSensitiveFiles(paths []string) (bool, error) {
+	if r.ConfirmSensitiveFiles == nil {
+		return prompts.AskToCommitSensitiveFiles(paths, r.Accessibility)
+	}
+	return r.ConfirmSensitiveFiles(paths)
 }
 
 // CreateRemote makes origin point at remoteUrl. A missing origin is added and

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/mattn/go-isatty"
@@ -57,6 +58,59 @@ func Init(dir, defaultBranch string) error {
 
 func AddAll(dir string) error {
 	return run(dir, "add", "-A")
+}
+
+// StagedFiles returns the paths in the index of dir. Before the first commit
+// these are exactly the paths the commit will contain.
+func StagedFiles(dir string) ([]string, error) {
+	cmd := exec.Command("git", "ls-files", "--cached", "-z")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, gerrors.New("git ls-files", err)
+	}
+	var paths []string
+	for _, p := range strings.Split(string(out), "\x00") {
+		if p != "" {
+			paths = append(paths, p)
+		}
+	}
+	return paths, nil
+}
+
+// sensitiveNames are file names that usually hold secrets or private keys.
+var sensitiveNames = []string{"id_rsa", "id_dsa", "id_ed25519"}
+
+// sensitiveExts are file extensions that usually hold keys or certificates
+// with private keys.
+var sensitiveExts = []string{".pem", ".p12", ".key"}
+
+// IsSensitivePath reports whether the base name of path matches the fixed
+// set of names that likely contain secrets: .env and .env.* (except
+// .env.example), *.pem, *.p12, *.key, id_rsa, id_dsa and id_ed25519.
+func IsSensitivePath(path string) bool {
+	name := path
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		name = name[i+1:]
+	}
+	if name == ".env" || (strings.HasPrefix(name, ".env.") && name != ".env.example") {
+		return true
+	}
+	if slices.Contains(sensitiveNames, name) {
+		return true
+	}
+	return slices.Contains(sensitiveExts, filepath.Ext(name))
+}
+
+// SensitivePaths returns the entries of paths that IsSensitivePath matches.
+func SensitivePaths(paths []string) []string {
+	var found []string
+	for _, p := range paths {
+		if IsSensitivePath(p) {
+			found = append(found, p)
+		}
+	}
+	return found
 }
 
 // output runs a git command and returns its trimmed stdout.

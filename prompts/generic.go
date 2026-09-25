@@ -224,6 +224,23 @@ func AskToUpdateRemote(name, current, url string, accessibility bool) (bool, err
 	return confirm, nil
 }
 
+// AskToCommitSensitiveFiles asks whether the initial commit should include
+// paths that may contain secrets. The caller prints the paths beforehand.
+func AskToCommitSensitiveFiles(paths []string, accessibility bool) (bool, error) {
+	confirm := false
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title(fmt.Sprintf("Commit %d file(s) that may contain secrets?", len(paths))).
+				Affirmative("Yes").Negative("No").Value(&confirm),
+		),
+	)
+	if err := form.WithAccessible(accessibility).WithLayout(huh.LayoutStack).Run(); err != nil {
+		return false, err
+	}
+	return confirm, nil
+}
+
 func required(label string) func(string) error {
 	return func(value string) error {
 		if strings.TrimSpace(value) == "" {
