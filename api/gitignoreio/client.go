@@ -6,11 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"strings"
 	"time"
 )
+
+// defaultTimeout matches the provider clients so large template downloads
+// are given the same time to complete.
+const defaultTimeout = 30 * time.Second
 
 type GitignoreConfig struct {
 	Name     string
@@ -26,15 +29,13 @@ type GitignoreIo struct {
 }
 
 func NewClient() *GitignoreIo {
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-	}
+	client := &http.Client{Timeout: defaultTimeout}
 	return NewClientWithBaseURL("https://www.toptal.com/developers/gitignore/api", client)
 }
 
 func NewClientWithBaseURL(baseUrl string, client *http.Client) *GitignoreIo {
 	if client == nil {
-		client = &http.Client{Timeout: 5 * time.Second}
+		client = &http.Client{Timeout: defaultTimeout}
 	}
 	return &GitignoreIo{
 		baseUrl:    strings.TrimRight(baseUrl, "/"),
@@ -50,7 +51,10 @@ func (c *GitignoreIo) List() (resp []string, err error) {
 	}
 	defer res.Body.Close()
 
-	ignoreList := parseIgnoreList(res.Body)
+	ignoreList, err := parseIgnoreList(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading gitignore.io list: %w", err)
+	}
 
 	if len(ignoreList) > 0 {
 		return ignoreList, nil
@@ -68,9 +72,9 @@ func (c *GitignoreIo) FetchAll() (resp map[string]GitignoreConfig, err error) {
 
 	var configs map[string]GitignoreConfig
 
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading gitignore.io templates: %w", err)
 	}
 
 	if err = json.Unmarshal(body, &configs); err != nil {
@@ -88,9 +92,9 @@ func (c *GitignoreIo) FetchConfig(names []string) (resp string, err error) {
 	}
 	defer res.Body.Close()
 
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("reading gitignore.io config: %w", err)
 	}
 
 	return string(body), nil
@@ -119,7 +123,7 @@ func (c *GitignoreIo) do(method, endpoint string, params map[string]string) (*ht
 	return res, nil
 }
 
-func parseIgnoreList(buf io.Reader) []string {
+func parseIgnoreList(buf io.Reader) ([]string, error) {
 	var ignoreList []string
 
 	scanner := bufio.NewScanner(buf)
@@ -128,6 +132,9 @@ func parseIgnoreList(buf io.Reader) []string {
 		names := strings.Split(line, ",")
 		ignoreList = append(ignoreList, names...)
 	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
 
-	return ignoreList
+	return ignoreList, nil
 }
