@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 )
 
@@ -27,8 +28,8 @@ func TestGetGitIgnoreGroupWithoutTemplates(t *testing.T) {
 	var files, types []string
 
 	t.Chdir(t.TempDir())
-	if g := GetGitIgnoreGroup(nil, &files, &types); g != nil {
-		t.Errorf("GetGitIgnoreGroup(nil) in empty dir = %v, want nil", g)
+	if g, err := GetGitIgnoreGroup(nil, &files, &types); err != nil || g != nil {
+		t.Errorf("GetGitIgnoreGroup(nil) in empty dir = %v, %v, want nil, nil", g, err)
 	}
 
 	dir := t.TempDir()
@@ -36,8 +37,31 @@ func TestGetGitIgnoreGroupWithoutTemplates(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(dir)
-	if g := GetGitIgnoreGroup(nil, &files, &types); g == nil {
-		t.Error("GetGitIgnoreGroup(nil) with local files = nil, want custom-file prompt")
+	if g, err := GetGitIgnoreGroup(nil, &files, &types); err != nil || g == nil {
+		t.Errorf("GetGitIgnoreGroup(nil) with local files = %v, %v, want custom-file prompt", g, err)
+	}
+}
+
+func TestGetGitIgnoreGroupMissingWorkingDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the working directory cannot be removed on Windows")
+	}
+	dir := filepath.Join(t.TempDir(), "gone")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	if err := os.Remove(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	var files, types []string
+	g, err := GetGitIgnoreGroup([]string{"go"}, &files, &types)
+	if err == nil {
+		t.Fatalf("GetGitIgnoreGroup() in removed dir = %v, nil, want error", g)
+	}
+	if g != nil {
+		t.Errorf("GetGitIgnoreGroup() group = %v, want nil on error", g)
 	}
 }
 
@@ -50,8 +74,36 @@ func TestGetListOfFilesOmitsGitDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := getListOfFiles(dir)
+	got, err := getListOfFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if want := []string{"README.md"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("getListOfFiles() = %#v, want %#v", got, want)
+	}
+}
+
+func TestGetListOfFilesErrors(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file")
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := map[string]string{
+		"missing directory": filepath.Join(dir, "missing"),
+		// Opening a file succeeds, so this exercises the Readdirnames failure.
+		"not a directory": file,
+	}
+	for name, path := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := getListOfFiles(path)
+			if err == nil {
+				t.Fatalf("getListOfFiles(%q) = %#v, nil, want error", path, got)
+			}
+			if got != nil {
+				t.Errorf("getListOfFiles(%q) list = %#v, want nil on error", path, got)
+			}
+		})
 	}
 }
