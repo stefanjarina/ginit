@@ -184,3 +184,89 @@ func TestIsRepositoryAndRemoteURL(t *testing.T) {
 		t.Fatalf("RemoteURL = %q, %v; want %q", got, err, url)
 	}
 }
+
+// commitOn creates a repository in a temp dir whose HEAD is branch, with one commit.
+func commitOn(t *testing.T, branch string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := Init(dir, branch); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("hi\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := Commit(dir, "initial commit"); err != nil {
+		t.Fatalf("Commit() error = %v", err)
+	}
+	return dir
+}
+
+func TestCurrentBranchUnborn(t *testing.T) {
+	isolateGit(t)
+	dir := t.TempDir()
+	if err := Init(dir, "trunk"); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	got, err := CurrentBranch(dir)
+	if err != nil {
+		t.Fatalf("CurrentBranch() error = %v", err)
+	}
+	if got != "trunk" {
+		t.Fatalf("CurrentBranch() = %q, want %q", got, "trunk")
+	}
+}
+
+func TestCurrentBranchDetached(t *testing.T) {
+	isolateGit(t)
+	setIdentity(t)
+	dir := commitOn(t, "main")
+	if err := run(dir, "checkout", "--detach"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := CurrentBranch(dir)
+	if err == nil || !strings.Contains(err.Error(), "detached") {
+		t.Fatalf("CurrentBranch() error = %v, want detached HEAD error", err)
+	}
+}
+
+func TestPushCurrentBranchNotMain(t *testing.T) {
+	isolateGit(t)
+	setIdentity(t)
+	dir := commitOn(t, "main")
+	// Switch to a different branch and drop main, so pushing "main" would fail.
+	if err := run(dir, "checkout", "-b", "feature"); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(dir, "branch", "-D", "main"); err != nil {
+		t.Fatal(err)
+	}
+
+	remote := t.TempDir()
+	if err := run(remote, "init", "--bare"); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddRemote(dir, "origin", remote); err != nil {
+		t.Fatal(err)
+	}
+
+	branch, err := CurrentBranch(dir)
+	if err != nil {
+		t.Fatalf("CurrentBranch() error = %v", err)
+	}
+	if branch != "feature" {
+		t.Fatalf("CurrentBranch() = %q, want %q", branch, "feature")
+	}
+	if err := Push(dir, "origin", branch); err != nil {
+		t.Fatalf("Push() error = %v", err)
+	}
+	if err := run(remote, "rev-parse", "--verify", "refs/heads/feature"); err != nil {
+		t.Fatalf("remote has no feature branch: %v", err)
+	}
+	upstream, err := output(dir, "rev-parse", "--abbrev-ref", "feature@{upstream}")
+	if err != nil || upstream != "origin/feature" {
+		t.Fatalf("upstream = %q (%v), want origin/feature", upstream, err)
+	}
+}
