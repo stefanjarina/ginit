@@ -218,13 +218,21 @@ func (r *runner) full(provider string) error {
 	// After the prompts and before the create call: write .gitignore and
 	// create the initial commit, so a local failure leaves no remote behind.
 	var localErr error
+	committed := false
 	r.svc.SetBeforeCreate(func(pi *service.ProjectInfo) error {
 		localErr = prepareBeforeCreate(r.svc, pi, r.dir)
+		committed = localErr == nil
 		return localErr
 	})
 
 	pi, err := r.svc.CreateRemoteRepo(provider)
 	if err != nil {
+		// Once the initial commit exists, keep it: the user can retry the
+		// remote without redoing the local work.
+		if committed {
+			return &stepError{step: "create remote repo", err: err, warning: fmt.Sprintf(
+				"No remote repository was created. The local repository and its initial commit were kept in %s.", r.dir)}
+		}
 		cleanup()
 		if localErr != nil {
 			return &stepError{step: "prepare local repository", err: err, warning: "No remote repository was created."}
