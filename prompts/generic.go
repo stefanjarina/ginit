@@ -224,5 +224,6 @@ func getListOfFiles(name string) []string {
 	defer file.Close()
 
 	list, _ := file.Readdirnames(0)
-	return list
+	// .git in .gitignore has no effect on git's own metadata directory.
+	return slices.DeleteFunc(list, func(n string) bool { return n == ".git" })
 }

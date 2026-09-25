@@ -40,3 +40,18 @@ func TestGetGitIgnoreGroupWithoutTemplates(t *testing.T) {
 		t.Error("GetGitIgnoreGroup(nil) with local files = nil, want custom-file prompt")
 	}
 }
+
+func TestGetListOfFilesOmitsGitDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := getListOfFiles(dir)
+	if want := []string{"README.md"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("getListOfFiles() = %#v, want %#v", got, want)
+	}
+}
