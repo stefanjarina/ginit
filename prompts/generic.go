@@ -27,7 +27,9 @@ func GetRepoDetailGroup(repository string, repoName *string, description *string
 	}
 
 	return huh.NewGroup(
-		huh.NewInput().Title("Repository Name").Value(repoName).Validate(required("repository name")),
+		huh.NewInput().Title("Repository Name").Value(repoName).Validate(func(name string) error {
+			return ValidateRepoName(repository, name)
+		}),
 		huh.NewInput().Title("Description").Value(description),
 		huh.NewSelect[string]().Title("Visibility").Options(visibilityChoices...).Value(visibility),
 	)
