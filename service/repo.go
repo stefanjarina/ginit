@@ -404,7 +404,7 @@ func (r *RepoService) handleGitlab() (*ProjectInfo, error) {
 	availableTypes := r.fetchGitignoreList()
 
 	// Project info (incl. visibility) first,
-	// THEN authenticate + GetGroups, because the group query is filtered by visibility.
+	// THEN authenticate + GetGroups.
 	pi, err := prompts.AskForProjectInfo("gitlab", availableTypes, r.Accessibility)
 	if err != nil {
 		return nil, err
@@ -416,7 +416,7 @@ func (r *RepoService) handleGitlab() (*ProjectInfo, error) {
 		if e := client.Connect(); e != nil {
 			return e
 		}
-		gs, e := client.GetGroups(pi.Visibility)
+		gs, e := client.GetGroups()
 		groups = gs
 		return e
 	}); err != nil {
