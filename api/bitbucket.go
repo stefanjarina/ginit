@@ -97,18 +97,40 @@ func (bc *BitbucketClient) GetProjects(workspace string) ([]BitbucketProject, er
 func (bc *BitbucketClient) CreateRepository(workspace, projectKey, name, description, visibility string) (string, error) {
 	body := map[string]any{
 		"scm":         "git",
+		"name":        name,
 		"is_private":  visibility != "public",
 		"description": description,
 	}
 	if projectKey != "" {
 		body["project"] = map[string]string{"key": projectKey}
 	}
-	path := "repositories/" + url.PathEscape(workspace) + "/" + url.PathEscape(name)
+	path := "repositories/" + url.PathEscape(workspace) + "/" + url.PathEscape(BitbucketSlug(name))
 	var resp bitbucketRepoResponse
 	if err := bc.post(path, body, &resp); err != nil {
 		return "", gerrors.NewProvider("bitbucket", "create repository", err)
 	}
 	return pickCloneURL(resp.Links.Clone)
+}
+
+// BitbucketSlug turns a repository name into the slug Bitbucket expects in
+// repositories/{workspace}/{repo_slug}: lowercase ASCII letters, digits,
+// '.', '_' and '-'. Any other run of characters, hyphens included,
+// becomes a single '-'.
+func BitbucketSlug(name string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(strings.TrimSpace(name)) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '_' {
+			b.WriteRune(r)
+			dash = false
+			continue
+		}
+		if !dash {
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 func getBitbucketPaged[T any](bc *BitbucketClient, path string, out *[]T) error {

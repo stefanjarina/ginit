@@ -26,7 +26,7 @@ func TestBitbucketClientEndpointsAuthAndCreateBody(t *testing.T) {
 			_, _ = w.Write([]byte(`{"values":[{"name":"Team","slug":"team"}]}`))
 		case "/2.0/workspaces/team/projects":
 			_, _ = w.Write([]byte(`{"values":[{"name":"Project","key":"PRJ"}]}`))
-		case "/2.0/repositories/team/demo":
+		case "/2.0/repositories/team/my-demo":
 			if r.Method != http.MethodPost {
 				t.Fatalf("method = %s, want POST", r.Method)
 			}
@@ -58,7 +58,7 @@ func TestBitbucketClientEndpointsAuthAndCreateBody(t *testing.T) {
 	if len(projects) != 1 || projects[0].Key != "PRJ" {
 		t.Fatalf("projects = %#v", projects)
 	}
-	remoteURL, err := client.CreateRepository("team", "PRJ", "demo", "description", "private")
+	remoteURL, err := client.CreateRepository("team", "PRJ", "My Demo", "description", "private")
 	if err != nil {
 		t.Fatalf("CreateRepository() error = %v", err)
 	}
@@ -70,7 +70,7 @@ func TestBitbucketClientEndpointsAuthAndCreateBody(t *testing.T) {
 	if remoteURL != wantURL {
 		t.Fatalf("remoteURL = %q, want %q", remoteURL, wantURL)
 	}
-	if createBody["scm"] != "git" || createBody["description"] != "description" || createBody["is_private"] != true {
+	if createBody["scm"] != "git" || createBody["name"] != "My Demo" || createBody["description"] != "description" || createBody["is_private"] != true {
 		t.Fatalf("create body = %#v", createBody)
 	}
 	project, ok := createBody["project"].(map[string]any)
@@ -91,4 +91,21 @@ func handlerTransport(handler http.Handler) http.RoundTripper {
 		handler.ServeHTTP(rec, r)
 		return rec.Result(), nil
 	})
+}
+
+func TestBitbucketSlug(t *testing.T) {
+	tests := map[string]string{
+		"demo":            "demo",
+		"MyRepo":          "myrepo",
+		"My Repo":         "my-repo",
+		"  My  Repo!  ":   "my-repo",
+		"a_b.c-d":         "a_b.c-d",
+		"Ünïcode -- Name": "n-code-name",
+		"!!!":             "",
+	}
+	for name, want := range tests {
+		if got := BitbucketSlug(name); got != want {
+			t.Errorf("BitbucketSlug(%q) = %q, want %q", name, got, want)
+		}
+	}
 }
