@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -319,5 +320,75 @@ func TestInspectRemoteOutsideRepository(t *testing.T) {
 	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(t.TempDir()))
 	if _, _, err := InspectRemote(t.TempDir(), "origin", "x"); err == nil {
 		t.Fatal("expected an error outside a git repository")
+	}
+}
+
+// defaultPatterns mirrors config.DefaultSecretPatterns; gitops cannot import config.
+var defaultPatterns = []string{
+	".env", ".env.*", "!.env.example",
+	"*.pem", "*.p12", "*.key",
+	"id_rsa", "id_dsa", "id_ed25519",
+}
+
+func TestSensitivePaths(t *testing.T) {
+	paths := []string{
+		".env", ".env.local", ".env.example", "config/.env.production", "app/.env.example",
+		"server.pem", "cert.p12", "tls/private.key", "id_rsa", ".ssh/id_dsa", "id_ed25519",
+		"id_rsa.pub", "main.go", "README.md", "env", ".envrc", "keys.go",
+	}
+	want := []string{
+		".env", ".env.local", "config/.env.production",
+		"server.pem", "cert.p12", "tls/private.key", "id_rsa", ".ssh/id_dsa", "id_ed25519",
+	}
+	got, err := SensitivePaths(paths, defaultPatterns)
+	if err != nil {
+		t.Fatalf("SensitivePaths() error = %v", err)
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("SensitivePaths() = %q, want %q", got, want)
+	}
+}
+
+func TestSensitivePathsCustomPatterns(t *testing.T) {
+	paths := []string{"secrets/prod.yml", "config/secrets/dev.yml", "creds.json", "creds.json.example"}
+	got, err := SensitivePaths(paths, []string{"secrets/*", "creds.*", "!*.example"})
+	if err != nil {
+		t.Fatalf("SensitivePaths() error = %v", err)
+	}
+	if want := []string{"secrets/prod.yml", "creds.json"}; !slices.Equal(got, want) {
+		t.Errorf("SensitivePaths() = %q, want %q", got, want)
+	}
+}
+
+func TestSensitivePathsInvalidPattern(t *testing.T) {
+	if _, err := SensitivePaths([]string{"a"}, []string{"[a-"}); err == nil {
+		t.Fatal("SensitivePaths() error = nil, want invalid pattern error")
+	}
+}
+
+func TestStagedFiles(t *testing.T) {
+	isolateGit(t)
+	dir := t.TempDir()
+	if err := Init(dir, "main"); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{".env", "sub dir/a.txt"} {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := AddAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	got, err := StagedFiles(dir)
+	if err != nil {
+		t.Fatalf("StagedFiles() error = %v", err)
+	}
+	if want := []string{".env", "sub dir/a.txt"}; !slices.Equal(got, want) {
+		t.Errorf("StagedFiles() = %q, want %q", got, want)
 	}
 }

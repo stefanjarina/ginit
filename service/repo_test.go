@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -114,6 +115,115 @@ func TestCommitLocalGitEmptyTree(t *testing.T) {
 	err := svc.CommitLocalGit(dir)
 	if err == nil || !strings.Contains(err.Error(), "nothing to commit") {
 		t.Fatalf("CommitLocalGit() error = %v, want nothing to commit error", err)
+	}
+}
+
+func TestCommitLocalGitSensitiveFiles(t *testing.T) {
+	console.Accessible = true
+	for _, tc := range []struct {
+		name       string
+		answer     bool
+		wantCommit bool
+	}{
+		{name: "confirm", answer: true, wantCommit: true},
+		{name: "decline", answer: false, wantCommit: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateGit(t)
+			t.Setenv("GIT_AUTHOR_NAME", "Test")
+			t.Setenv("GIT_AUTHOR_EMAIL", "test@example.com")
+			t.Setenv("GIT_COMMITTER_NAME", "Test")
+			t.Setenv("GIT_COMMITTER_EMAIL", "test@example.com")
+			dir := t.TempDir()
+			for name, content := range map[string]string{
+				".env":         "TOKEN=secret\n",
+				".env.example": "TOKEN=\n",
+				"main.go":      "package main\n",
+			} {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			svc := newTestService()
+			if err := svc.PrepareLocalGit(dir); err != nil {
+				t.Fatalf("PrepareLocalGit() error = %v", err)
+			}
+			var asked []string
+			svc.ConfirmSensitiveFiles = func(paths []string) (bool, error) {
+				asked = paths
+				return tc.answer, nil
+			}
+
+			err := svc.CommitLocalGit(dir)
+			if !reflect.DeepEqual(asked, []string{".env"}) {
+				t.Errorf("asked about %q, want [.env]", asked)
+			}
+			committed := exec.Command("git", "-C", dir, "rev-parse", "--verify", "--quiet", "HEAD").Run() == nil
+			if committed != tc.wantCommit {
+				t.Errorf("commit created = %v, want %v", committed, tc.wantCommit)
+			}
+			if tc.wantCommit && err != nil {
+				t.Fatalf("CommitLocalGit() error = %v", err)
+			}
+			if !tc.wantCommit && (err == nil || !strings.Contains(err.Error(), "secrets")) {
+				t.Fatalf("CommitLocalGit() error = %v, want cancelled error", err)
+			}
+		})
+	}
+}
+
+func TestCommitLocalGitNoSensitiveFilesDoesNotAsk(t *testing.T) {
+	console.Accessible = true
+	isolateGit(t)
+	t.Setenv("GIT_AUTHOR_NAME", "Test")
+	t.Setenv("GIT_AUTHOR_EMAIL", "test@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "Test")
+	t.Setenv("GIT_COMMITTER_EMAIL", "test@example.com")
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".env.example"), []byte("TOKEN=\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := newTestService()
+	if err := svc.PrepareLocalGit(dir); err != nil {
+		t.Fatalf("PrepareLocalGit() error = %v", err)
+	}
+	svc.ConfirmSensitiveFiles = func([]string) (bool, error) {
+		t.Error("ConfirmSensitiveFiles called without sensitive files")
+		return false, nil
+	}
+	if err := svc.CommitLocalGit(dir); err != nil {
+		t.Fatalf("CommitLocalGit() error = %v", err)
+	}
+}
+
+func TestCommitLocalGitUsesConfiguredSecretPatterns(t *testing.T) {
+	console.Accessible = true
+	isolateGit(t)
+	t.Setenv("GIT_AUTHOR_NAME", "Test")
+	t.Setenv("GIT_AUTHOR_EMAIL", "test@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "Test")
+	t.Setenv("GIT_COMMITTER_EMAIL", "test@example.com")
+	dir := t.TempDir()
+	for _, name := range []string{".env", "prod.secret"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := newTestService()
+	svc.Cfg.SecretPatterns = []string{"*.secret"}
+	if err := svc.PrepareLocalGit(dir); err != nil {
+		t.Fatalf("PrepareLocalGit() error = %v", err)
+	}
+	var asked []string
+	svc.ConfirmSensitiveFiles = func(paths []string) (bool, error) {
+		asked = paths
+		return false, nil
+	}
+	if err := svc.CommitLocalGit(dir); err == nil {
+		t.Fatal("CommitLocalGit() error = nil, want cancelled error")
+	}
+	if !reflect.DeepEqual(asked, []string{"prod.secret"}) {
+		t.Errorf("asked about %q, want [prod.secret]", asked)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -57,6 +58,63 @@ func Init(dir, defaultBranch string) error {
 
 func AddAll(dir string) error {
 	return run(dir, "add", "-A")
+}
+
+// StagedFiles returns the paths in the index of dir. Before the first commit
+// these are exactly the paths the commit will contain.
+func StagedFiles(dir string) ([]string, error) {
+	cmd := exec.Command("git", "ls-files", "--cached", "-z")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, gerrors.New("git ls-files", err)
+	}
+	var paths []string
+	for _, p := range strings.Split(string(out), "\x00") {
+		if p != "" {
+			paths = append(paths, p)
+		}
+	}
+	return paths, nil
+}
+
+// SensitivePaths returns the entries of paths that match patterns.
+//
+// Each pattern is a path.Match glob. A pattern without a slash is matched
+// against the file name, one with a slash against the whole path. A pattern
+// starting with "!" excludes the paths it matches. As in .gitignore, the last
+// pattern that matches a path decides, so "!.env.example" after ".env.*"
+// keeps .env.example out. A malformed pattern is an error.
+func SensitivePaths(paths, patterns []string) ([]string, error) {
+	for _, p := range patterns {
+		if _, err := path.Match(strings.TrimPrefix(p, "!"), ""); err != nil {
+			return nil, fmt.Errorf("invalid secret pattern %q: %w", p, err)
+		}
+	}
+	var found []string
+	for _, p := range paths {
+		if isSensitive(p, patterns) {
+			found = append(found, p)
+		}
+	}
+	return found, nil
+}
+
+func isSensitive(file string, patterns []string) bool {
+	name := path.Base(file)
+	sensitive := false
+	for _, p := range patterns {
+		negate := strings.HasPrefix(p, "!")
+		p = strings.TrimPrefix(p, "!")
+		subject := name
+		if strings.Contains(p, "/") {
+			subject = file
+		}
+		if ok, _ := path.Match(p, subject); ok {
+			sensitive = !negate
+		}
+	}
+	return sensitive
 }
 
 // output runs a git command and returns its trimmed stdout.

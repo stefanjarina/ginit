@@ -11,7 +11,7 @@ This application automates the manual steps most of people do when creating new 
 - append to `.gitignore` files already in folder (you can choose which ones)
 - create some config files (e.g. `.eslintrc`, `.tslintrc`, `.prettierrc`) [not implemented yet]
 - add your project files
-- commit the initial set of files
+- commit the initial set of files (asking first when files that look like secrets, e.g. `.env` or `*.pem`, would be committed; the patterns are `secretpatterns` in the config file)
 - push up to the remote repository
 
 ## DISCLAIMER

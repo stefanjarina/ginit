@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -126,5 +127,30 @@ func TestSetProtocolRejectsUnknownValue(t *testing.T) {
 	}
 	if cfg.Protocol != "ssh" {
 		t.Fatalf("protocol = %q, want ssh unchanged", cfg.Protocol)
+	}
+}
+
+func TestCreateDefaultSeedsSecretPatterns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ginit.yaml")
+	if err := CreateDefault(path, globals.SupportedRepos); err != nil {
+		t.Fatalf("CreateDefault() error = %v", err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !slices.Equal(cfg.SecretPatterns, DefaultSecretPatterns()) {
+		t.Errorf("secretpatterns = %q, want %q", cfg.SecretPatterns, DefaultSecretPatterns())
+	}
+}
+
+func TestEffectiveSecretPatterns(t *testing.T) {
+	c := &Config{}
+	if got := c.EffectiveSecretPatterns(); !slices.Equal(got, DefaultSecretPatterns()) {
+		t.Errorf("unset secretpatterns = %q, want defaults %q", got, DefaultSecretPatterns())
+	}
+	c.SecretPatterns = []string{"*.secret"}
+	if got := c.EffectiveSecretPatterns(); !slices.Equal(got, []string{"*.secret"}) {
+		t.Errorf("configured secretpatterns = %q, want [*.secret]", got)
 	}
 }
