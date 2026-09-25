@@ -328,3 +328,25 @@ func TestCreateRemotePromptError(t *testing.T) {
 		t.Errorf("origin = %q, want unchanged %q", got, oldOrigin)
 	}
 }
+
+func TestHandlersRejectMissingProviderBeforePrompting(t *testing.T) {
+	console.Accessible = true
+	path := filepath.Join(t.TempDir(), "ginit.yaml")
+	svc := New(&config.Config{DefaultBranch: "main"}, path, true)
+
+	handlers := map[string]func() (*ProjectInfo, error){
+		"azure":     svc.handleAzure,
+		"bitbucket": svc.handleBitbucket,
+		"github":    svc.handleGithub,
+		"gitlab":    svc.handleGitlab,
+		"gitea":     func() (*ProjectInfo, error) { return svc.handleGiteaCompatible("gitea") },
+	}
+	for name, handle := range handlers {
+		if _, err := handle(); err == nil || !strings.Contains(err.Error(), "unknown provider: "+name) {
+			t.Errorf("%s handler error = %v, want unknown provider", name, err)
+		}
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("config file was written: stat error = %v", err)
+	}
+}

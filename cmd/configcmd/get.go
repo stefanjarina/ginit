@@ -8,15 +8,15 @@ import (
 )
 
 var getCmd = &cobra.Command{
-	Use:   "get (defaultbranch | protocol | <provider> <key>)",
+	Use:   "get (default_branch | protocol | <provider> <key>)",
 	Short: "Get value of a configuration key",
 	Long: `Get value of a configuration key.
 
 "protocol" prints the effective clone URL protocol, including the platform
 default when it is not set.`,
-	Example: `  ginit config get defaultbranch
+	Example: `  ginit config get default_branch
   ginit config get protocol
-  ginit config get github baseurl`,
+  ginit config get github base_url`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 0 && (config.IsDefaultBranchKey(args[0]) || config.IsProtocolKey(args[0])) {
 			return cobra.ExactArgs(1)(cmd, args)

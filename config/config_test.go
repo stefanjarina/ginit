@@ -33,13 +33,13 @@ func TestCreateDefaultIncludesAllProviders(t *testing.T) {
 		t.Fatalf("provider count = %d, want %d", len(cfg.Providers), len(want))
 	}
 	for provider, baseURL := range want {
-		if got := cfg.GetValue(provider, "baseurl"); got != baseURL {
-			t.Errorf("%s baseurl = %q, want %q", provider, got, baseURL)
+		if got := cfg.GetValue(provider, "base_url"); got != baseURL {
+			t.Errorf("%s base_url = %q, want %q", provider, got, baseURL)
 		}
 	}
 }
 
-func TestSetRemoveSaveLowercaseYAML(t *testing.T) {
+func TestSetRemoveSaveSnakeCaseYAML(t *testing.T) {
 	cfg := &Config{DefaultBranch: "main", Providers: []Provider{{Name: "github", Options: map[string]string{}}}}
 	if err := cfg.SetValue("github", "token", "secret"); err != nil {
 		t.Fatalf("SetValue(token) error = %v", err)
@@ -60,9 +60,9 @@ func TestSetRemoveSaveLowercaseYAML(t *testing.T) {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
 	got := string(data)
-	for _, key := range []string{"defaultbranch:", "providers:", "baseurl:", "options:"} {
+	for _, key := range []string{"default_branch:", "providers:", "base_url:", "options:", "org_name:"} {
 		if !strings.Contains(got, key) {
-			t.Errorf("saved YAML missing lowercase key %q:\n%s", key, got)
+			t.Errorf("saved YAML missing snake_case key %q:\n%s", key, got)
 		}
 	}
 	if strings.Contains(got, "DefaultBranch") || strings.Contains(got, "BaseUrl") {
@@ -183,7 +183,7 @@ func TestSaveRestrictsAccessToCurrentUser(t *testing.T) {
 
 func TestSaveRestrictsExistingFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ginit.yaml")
-	if err := os.WriteFile(path, []byte("defaultbranch: main\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("default_branch: main\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	cfg := &Config{DefaultBranch: "trunk", Providers: []Provider{{Name: "github", Token: "secret"}}}

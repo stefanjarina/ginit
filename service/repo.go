@@ -211,7 +211,7 @@ func (r *RepoService) checkSensitiveFiles(dir string) error {
 	}
 	found, err := gitops.SensitivePaths(staged, r.Cfg.EffectiveSecretPatterns())
 	if err != nil {
-		return gerrors.NewHint(err.Error(), "fix secretpatterns in the ginit config file", nil)
+		return gerrors.NewHint(err.Error(), "fix secret_patterns in the ginit config file", nil)
 	}
 	if len(found) == 0 {
 		return nil
@@ -326,25 +326,42 @@ func (r *RepoService) push(dir, branch string) error {
 
 // ----- provider handlers -----
 
+// requireProvider fails when the config has no section for provider, so init
+// stops before prompting for values it could not store.
+func (r *RepoService) requireProvider(provider string) error {
+	if r.Cfg.GetProvider(provider) == nil {
+		return gerrors.NewHint(fmt.Sprintf("unknown provider: %s", provider),
+			fmt.Sprintf("add a %q entry under providers in the ginit config file", provider), nil)
+	}
+	return nil
+}
+
 // ensureBaseUrlAndToken prompts for missing token / base URL and persists them.
-// always checks baseurl then token. Defaults seeded by config.CreateDefault keep github/azure quiet.
+// always checks base_url then token. Defaults seeded by config.CreateDefault keep github/azure quiet.
 func (r *RepoService) ensureBaseUrlAndToken(provider string) error {
-	if r.Cfg.GetValue(provider, "baseurl") == "" {
+	if err := r.requireProvider(provider); err != nil {
+		return err
+	}
+	if r.Cfg.GetValue(provider, config.BaseUrlKey) == "" {
 		baseUrl, err := prompts.AskForBaseUrl(provider, r.Accessibility)
 		if err != nil {
 			return err
 		}
-		_ = r.Cfg.SetValue(provider, "baseurl", baseUrl)
+		if err := r.Cfg.SetValue(provider, config.BaseUrlKey, baseUrl); err != nil {
+			return err
+		}
 		if err := config.Save(r.CfgPath, r.Cfg); err != nil {
 			return err
 		}
 	}
-	if r.Cfg.GetValue(provider, "token") == "" {
+	if r.Cfg.GetValue(provider, config.TokenKey) == "" {
 		token, err := prompts.AskForToken(provider, r.Accessibility)
 		if err != nil {
 			return err
 		}
-		_ = r.Cfg.SetValue(provider, "token", token)
+		if err := r.Cfg.SetValue(provider, config.TokenKey, token); err != nil {
+			return err
+		}
 		if err := config.Save(r.CfgPath, r.Cfg); err != nil {
 			return err
 		}
@@ -356,8 +373,8 @@ func (r *RepoService) handleGithub() (*ProjectInfo, error) {
 	if err := r.ensureBaseUrlAndToken("github"); err != nil {
 		return nil, err
 	}
-	token := r.Cfg.GetValue("github", "token")
-	baseUrl := r.Cfg.GetValue("github", "baseurl")
+	token := r.Cfg.GetValue("github", config.TokenKey)
+	baseUrl := r.Cfg.GetValue("github", config.BaseUrlKey)
 
 	availableTypes := r.fetchGitignoreList()
 
@@ -427,13 +444,18 @@ type githubOwnerLister interface {
 }
 
 func (r *RepoService) handleAzure() (*ProjectInfo, error) {
-	// Azure also requires OrgName option.
-	if r.Cfg.GetValue("azure", "OrgName") == "" {
+	if err := r.requireProvider("azure"); err != nil {
+		return nil, err
+	}
+	// Azure also requires the org_name option.
+	if r.Cfg.GetValue("azure", config.OrgNameKey) == "" {
 		org, err := prompts.AskForAzureOrgName(r.Accessibility)
 		if err != nil {
 			return nil, err
 		}
-		_ = r.Cfg.SetValue("azure", "OrgName", org)
+		if err := r.Cfg.SetValue("azure", config.OrgNameKey, org); err != nil {
+			return nil, err
+		}
 		if err := config.Save(r.CfgPath, r.Cfg); err != nil {
 			return nil, err
 		}
@@ -442,9 +464,9 @@ func (r *RepoService) handleAzure() (*ProjectInfo, error) {
 		return nil, err
 	}
 
-	token := r.Cfg.GetValue("azure", "token")
-	org := r.Cfg.GetValue("azure", "OrgName")
-	baseUrl := r.Cfg.GetValue("azure", "baseurl")
+	token := r.Cfg.GetValue("azure", config.TokenKey)
+	org := r.Cfg.GetValue("azure", config.OrgNameKey)
+	baseUrl := r.Cfg.GetValue("azure", config.BaseUrlKey)
 
 	availableTypes := r.fetchGitignoreList()
 
@@ -496,8 +518,8 @@ func (r *RepoService) handleGitlab() (*ProjectInfo, error) {
 	if err := r.ensureBaseUrlAndToken("gitlab"); err != nil {
 		return nil, err
 	}
-	token := r.Cfg.GetValue("gitlab", "token")
-	baseUrl := r.Cfg.GetValue("gitlab", "baseurl")
+	token := r.Cfg.GetValue("gitlab", config.TokenKey)
+	baseUrl := r.Cfg.GetValue("gitlab", config.BaseUrlKey)
 
 	availableTypes := r.fetchGitignoreList()
 
@@ -550,12 +572,12 @@ func (r *RepoService) handleBitbucket() (*ProjectInfo, error) {
 	if err := r.ensureBaseUrlAndToken("bitbucket"); err != nil {
 		return nil, err
 	}
-	// Cloud authenticates with a Bearer API token and ignores User. On Data
-	// Center / Server an optional User switches to Basic auth; without it the
+	// Cloud authenticates with a Bearer API token and ignores the user option. On Data
+	// Center / Server an optional user switches to Basic auth; without it the
 	// HTTP access token is sent as a Bearer token.
-	user := r.Cfg.GetValue("bitbucket", "User")
-	token := r.Cfg.GetValue("bitbucket", "token")
-	baseUrl := r.Cfg.GetValue("bitbucket", "baseurl")
+	user := r.Cfg.GetValue("bitbucket", config.UserKey)
+	token := r.Cfg.GetValue("bitbucket", config.TokenKey)
+	baseUrl := r.Cfg.GetValue("bitbucket", config.BaseUrlKey)
 
 	availableTypes := r.fetchGitignoreList()
 
@@ -619,8 +641,8 @@ func (r *RepoService) handleGiteaCompatible(provider string) (*ProjectInfo, erro
 	if err := r.ensureBaseUrlAndToken(provider); err != nil {
 		return nil, err
 	}
-	token := r.Cfg.GetValue(provider, "token")
-	baseUrl := r.Cfg.GetValue(provider, "baseurl")
+	token := r.Cfg.GetValue(provider, config.TokenKey)
+	baseUrl := r.Cfg.GetValue(provider, config.BaseUrlKey)
 
 	availableTypes := r.fetchGitignoreList()
 
