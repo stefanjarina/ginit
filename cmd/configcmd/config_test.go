@@ -145,6 +145,50 @@ func TestConfigAllOptionalProvider(t *testing.T) {
 	}
 }
 
+func TestConfigAllRedactsTokens(t *testing.T) {
+	const fixtureToken = "ghp_fixture-token-must-not-leak"
+	config.Current = &config.Config{
+		DefaultBranch: "main",
+		Providers: []config.Provider{
+			{Name: "github", Token: fixtureToken, BaseUrl: "https://github.com", Options: map[string]string{}},
+			{Name: "gitlab", BaseUrl: "https://gitlab.com", Options: map[string]string{}},
+		},
+	}
+	config.CurrentPath = filepath.Join(t.TempDir(), "ginit.yaml")
+
+	for _, args := range [][]string{{"all"}, {"all", "github"}} {
+		out, err := executeConfig(args...)
+		if err != nil {
+			t.Fatalf("config %v error = %v", args, err)
+		}
+		if strings.Contains(out, fixtureToken) {
+			t.Fatalf("config %v leaked token:\n%s", args, out)
+		}
+		if !strings.Contains(out, "token: <redacted>") {
+			t.Fatalf("config %v output missing redacted marker:\n%s", args, out)
+		}
+	}
+
+	out, err := executeConfig("all", "gitlab")
+	if err != nil {
+		t.Fatalf("config all gitlab error = %v", err)
+	}
+	if !strings.Contains(out, `token: ""`) {
+		t.Fatalf("config all gitlab should show an unset token as empty:\n%s", out)
+	}
+
+	if got := config.Current.GetValue("github", "token"); got != fixtureToken {
+		t.Fatalf("config all mutated stored token = %q", got)
+	}
+	out, err = executeConfig("get", "github", "token")
+	if err != nil {
+		t.Fatalf("config get error = %v", err)
+	}
+	if strings.TrimSpace(out) != fixtureToken {
+		t.Fatalf("config get token output = %q, want %q", out, fixtureToken)
+	}
+}
+
 func executeConfig(args ...string) (string, error) {
 	var errBuf bytes.Buffer
 	oldStdout := os.Stdout
