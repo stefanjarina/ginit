@@ -45,7 +45,7 @@ func Run(title string, fn func() error) error {
 	}
 
 	if runErr != nil {
-		Error(fmt.Sprintf("%s failed", title), runErr)
+		printError(fmt.Sprintf("%s failed", title), runErr)
 		return runErr
 	}
 	Success(fmt.Sprintf("✓ %s", title))

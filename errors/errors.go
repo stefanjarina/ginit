@@ -6,6 +6,8 @@ type GinitError struct {
 	Msg      string
 	Provider string
 	Err      error
+	// Hint tells the user how to fix the problem. It is always shown.
+	Hint string
 }
 
 func (e *GinitError) Error() string {
@@ -13,10 +15,14 @@ func (e *GinitError) Error() string {
 	if e.Provider != "" {
 		prefix = "[" + e.Provider + "] "
 	}
+	msg := prefix + e.Msg
 	if e.Err != nil {
-		return fmt.Sprintf("%s%s: %v", prefix, e.Msg, e.Err)
+		msg = fmt.Sprintf("%s: %v", msg, e.Err)
 	}
-	return prefix + e.Msg
+	if e.Hint != "" {
+		msg += "; " + e.Hint
+	}
+	return msg
 }
 
 func (e *GinitError) Unwrap() error {
@@ -29,4 +35,9 @@ func New(msg string, err error) error {
 
 func NewProvider(provider, msg string, err error) error {
 	return &GinitError{Msg: msg, Provider: provider, Err: err}
+}
+
+// NewHint creates an error whose hint is shown to the user even without --verbose.
+func NewHint(msg, hint string, err error) error {
+	return &GinitError{Msg: msg, Err: err, Hint: hint}
 }

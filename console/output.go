@@ -32,7 +32,17 @@ func Info(msg string)    { fmt.Fprintln(os.Stdout, render(infoStyle, msg)) }
 func Success(msg string) { fmt.Fprintln(os.Stdout, render(successStyle, msg)) }
 func Warning(msg string) { fmt.Fprintln(os.Stderr, render(warnStyle, msg)) }
 
+// Error prints msg and, for errors that carry one, the problem and its fix.
+// The full cause is only printed with --verbose.
 func Error(msg string, err error) {
+	printError(msg, err)
+	var ge *gerrors.GinitError
+	if !Verbose && stderrors.As(err, &ge) && ge.Hint != "" {
+		fmt.Fprintf(os.Stderr, "  %s\n  %s\n", ge.Msg, ge.Hint)
+	}
+}
+
+func printError(msg string, err error) {
 	prefix := "Error"
 	var ge *gerrors.GinitError
 	if stderrors.As(err, &ge) && ge.Provider != "" {

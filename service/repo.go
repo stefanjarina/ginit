@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
@@ -28,6 +29,11 @@ type RepoService struct {
 	Accessibility bool
 
 	GitignoreIo *gitignoreio.GitignoreIo
+
+	// BeforeCreate, when set, runs after the provider prompts and right before
+	// the repository is created on the host. An error aborts the create, so
+	// nothing is left behind on the remote side.
+	BeforeCreate func(pi *ProjectInfo) error
 }
 
 func New(cfg *config.Config, cfgPath string, accessibility bool) *RepoService {
@@ -57,6 +63,13 @@ func (r *RepoService) CreateRemoteRepo(provider string) (*ProjectInfo, error) {
 	}
 }
 
+func (r *RepoService) beforeCreate(pi *ProjectInfo) error {
+	if r.BeforeCreate == nil {
+		return nil
+	}
+	return r.BeforeCreate(pi)
+}
+
 // CreateGitignoreFile fetches templates and writes .gitignore to cwd.
 func (r *RepoService) CreateGitignoreFile(pi *ProjectInfo) error {
 	return console.Run("Generating .gitignore", func() error {
@@ -76,21 +89,47 @@ func (r *RepoService) CreateGitignoreFile(pi *ProjectInfo) error {
 	})
 }
 
-// InitializeLocalGit runs `git init`, stages everything and creates the initial commit.
-func (r *RepoService) InitializeLocalGit() error {
+// PrepareLocalGit runs `git init` in dir and verifies that a commit identity
+// is configured there. The identity is checked inside the new repository so
+// that includeIf sections of the user's git config apply.
+func (r *RepoService) PrepareLocalGit(dir string) error {
 	return console.Run("Initializing local git", func() error {
-		cwd, err := os.Getwd()
-		if err != nil {
+		if err := gitops.Init(dir, r.Cfg.DefaultBranch); err != nil {
 			return err
 		}
-		if err := gitops.Init(cwd, r.Cfg.DefaultBranch); err != nil {
-			return err
-		}
-		if err := gitops.AddAll(cwd); err != nil {
-			return err
-		}
-		return gitops.Commit(cwd, "initial commit")
+		return gitops.CheckIdentity(dir)
 	})
+}
+
+// CommitLocalGit stages everything in dir and creates the initial commit.
+func (r *RepoService) CommitLocalGit(dir string) error {
+	commit := func() error {
+		if err := gitops.AddAll(dir); err != nil {
+			return err
+		}
+		if err := gitops.Commit(dir, "initial commit"); err != nil {
+			if errors.Is(err, gitops.ErrNothingToCommit) {
+				return gerrors.NewHint("nothing to commit: the directory is empty and no .gitignore was generated",
+					"Add a file (e.g. README.md) or select gitignore templates.", nil)
+			}
+			return err
+		}
+		return nil
+	}
+
+	if !gitops.SigningEnabled(dir) {
+		return console.Run("Creating initial commit", commit)
+	}
+
+	// Signing may prompt for a passphrase, so git needs the terminal and no
+	// spinner may run while it does.
+	console.Info("Creating initial commit (commit signing is enabled, you may be asked for a passphrase)")
+	if err := commit(); err != nil {
+		console.Warning("Creating initial commit failed")
+		return err
+	}
+	console.Success("✓ Creating initial commit")
+	return nil
 }
 
 // CreateRemote registers the origin remote in the local repo.
@@ -178,6 +217,10 @@ func (r *RepoService) handleGithub() (*ProjectInfo, error) {
 		return nil, err
 	}
 
+	if err := r.beforeCreate(pi); err != nil {
+		return nil, err
+	}
+
 	var url string
 	if err := console.Run("Creating repo on GitHub", func() error {
 		u, e := client.CreateRepository(pi.Name, pi.Description, pi.Visibility)
@@ -239,6 +282,10 @@ func (r *RepoService) handleAzure() (*ProjectInfo, error) {
 		return nil, err
 	}
 
+	if err := r.beforeCreate(pi); err != nil {
+		return nil, err
+	}
+
 	var url string
 	if err := console.Run("Creating repo on Azure DevOps", func() error {
 		u, e := client.CreateRepository(project, pi.Name)
@@ -285,6 +332,10 @@ func (r *RepoService) handleGitlab() (*ProjectInfo, error) {
 
 	groupId, err := prompts.AskForGitlabGroup(groups, r.Accessibility)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := r.beforeCreate(pi); err != nil {
 		return nil, err
 	}
 
@@ -360,6 +411,10 @@ func (r *RepoService) handleBitbucket() (*ProjectInfo, error) {
 		return nil, err
 	}
 
+	if err := r.beforeCreate(pi); err != nil {
+		return nil, err
+	}
+
 	var remoteUrl string
 	if err := console.Run("Creating repo on Bitbucket", func() error {
 		u, e := client.CreateRepository(workspace, project, pi.Name, pi.Description, pi.Visibility)
@@ -404,6 +459,10 @@ func (r *RepoService) handleGiteaCompatible(provider string) (*ProjectInfo, erro
 
 	pi, err := prompts.AskForProjectInfo(provider, availableTypes, r.Accessibility)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := r.beforeCreate(pi); err != nil {
 		return nil, err
 	}
 
