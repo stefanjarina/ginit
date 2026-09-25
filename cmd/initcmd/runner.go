@@ -18,7 +18,9 @@ func accessibilityFromRoot(cmd *cobra.Command) bool {
 	return v
 }
 
-// runProvider implements the full init flow for one provider
+// runProvider implements the full init flow for one provider.
+// Service steps run through console.Run, which already prints their failure;
+// console.Error skips those errors, so each failure is reported only once.
 func runProvider(cmd *cobra.Command, provider string) {
 	if err := gitops.CheckInstalled(); err != nil {
 		console.Error("check git", err)
@@ -90,7 +92,8 @@ func runProvider(cmd *cobra.Command, provider string) {
 			_ = gitops.RemoveGitDir(cwd)
 		}
 		if localErr != nil {
-			console.Error("prepare local repository (no remote repository was created)", err)
+			console.Error("prepare local repository", err)
+			console.Warning("No remote repository was created.")
 		} else {
 			console.Error("create remote repo", err)
 		}

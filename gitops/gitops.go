@@ -70,7 +70,7 @@ func output(dir string, args ...string) (string, error) {
 // CheckInstalled reports an error when git is not on PATH.
 func CheckInstalled() error {
 	if _, err := exec.LookPath("git"); err != nil {
-		return gerrors.NewHint("git was not found on PATH", "Install git and make sure it is on PATH.", err)
+		return gerrors.NewHint("git was not found on PATH", "install git and make sure it is on PATH", err)
 	}
 	return nil
 }
@@ -103,7 +103,7 @@ func CheckIdentity(dir string) error {
 	}
 	return gerrors.NewHint(
 		fmt.Sprintf("git commit identity is not configured (missing %s)", strings.Join(missing, ", ")),
-		"Set it with: "+strings.Join(cmds, " && "), nil)
+		"set it with: "+strings.Join(cmds, " && "), nil)
 }
 
 // HasStagedFiles reports whether the index of dir contains any entries.
@@ -144,7 +144,7 @@ func Commit(dir, msg string) error {
 		}
 		return gerrors.NewHint(
 			"commit signing (commit.gpgsign) failed: "+reason,
-			"Make sure your signing key can be unlocked (e.g. export GPG_TTY=$(tty), or cache the passphrase in your agent), or turn off commit.gpgsign.", err)
+			"make sure your signing key can be unlocked (e.g. export GPG_TTY=$(tty), or cache the passphrase in your agent), or turn off commit.gpgsign", err)
 	}
 	return nil
 }

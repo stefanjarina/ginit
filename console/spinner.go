@@ -18,10 +18,22 @@ var Accessible bool
 var spinnerTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("12"))
 
 // Run shows an animated huh spinner while fn executes. On success it prints a
-// "✓ <title>" line; on failure it surfaces the error via Error and returns it.
+// "✓ <title>" line; on failure it surfaces the error via Error and returns it
+// marked as reported, so callers must not print it again (a later Error call
+// on it, or on anything wrapping it, is a no-op).
 // In non-TTY or accessibility modes the spinner degrades to a single line of
 // plain text so logs stay readable.
 func Run(title string, fn func() error) error {
+	return run(title, fn, func(msg string, err error) { Error(msg, err) })
+}
+
+// RunOptional behaves like Run but reports a failure as a warning, for steps
+// the caller can recover from. The error is still returned, marked as reported.
+func RunOptional(title string, fn func() error) error {
+	return run(title, fn, func(msg string, err error) { Warning(fmt.Sprintf("%s: %v", msg, err)) })
+}
+
+func run(title string, fn func() error, report func(msg string, err error)) error {
 	plain := Accessible || NoColor || os.Getenv("NO_COLOR") != "" || !isatty.IsTerminal(os.Stdout.Fd())
 
 	var runErr error
@@ -45,8 +57,8 @@ func Run(title string, fn func() error) error {
 	}
 
 	if runErr != nil {
-		printError(fmt.Sprintf("%s failed", title), runErr)
-		return runErr
+		report(fmt.Sprintf("%s failed", title), runErr)
+		return markReported(runErr)
 	}
 	Success(fmt.Sprintf("✓ %s", title))
 	return nil

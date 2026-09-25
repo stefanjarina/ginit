@@ -6,7 +6,7 @@ type GinitError struct {
 	Msg      string
 	Provider string
 	Err      error
-	// Hint tells the user how to fix the problem. It is always shown.
+	// Hint tells the user how to fix the problem. Error() always includes it.
 	Hint string
 }
 
@@ -37,7 +37,7 @@ func NewProvider(provider, msg string, err error) error {
 	return &GinitError{Msg: msg, Provider: provider, Err: err}
 }
 
-// NewHint creates an error whose hint is shown to the user even without --verbose.
+// NewHint creates an error that carries a fix for the user in its message.
 func NewHint(msg, hint string, err error) error {
 	return &GinitError{Msg: msg, Err: err, Hint: hint}
 }
