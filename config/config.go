@@ -15,8 +15,12 @@ type Config struct {
 	DefaultBranch string `yaml:"defaultbranch"`
 	// Protocol selects the clone URL used for origin: "ssh" or "https".
 	// Empty means the platform default, see DefaultProtocol.
-	Protocol  string     `yaml:"protocol,omitempty"`
-	Providers []Provider `yaml:"providers"`
+	Protocol string `yaml:"protocol,omitempty"`
+	// SecretPatterns lists the file patterns that make init ask before the
+	// initial commit. Empty means DefaultSecretPatterns, see
+	// EffectiveSecretPatterns.
+	SecretPatterns []string   `yaml:"secretpatterns,omitempty"`
+	Providers      []Provider `yaml:"providers"`
 }
 
 // providerDefaults seeds known providers with sensible BaseUrls.
@@ -76,7 +80,7 @@ func CreateDefault(path string, supported []string) error {
 			Options: map[string]string{},
 		})
 	}
-	c := &Config{DefaultBranch: "main", Providers: providers}
+	c := &Config{DefaultBranch: "main", SecretPatterns: DefaultSecretPatterns(), Providers: providers}
 	return Save(path, c)
 }
 
@@ -209,4 +213,24 @@ func (c *Config) EffectiveProtocol() (string, error) {
 		return DefaultProtocol(), nil
 	}
 	return NormalizeProtocol(c.Protocol)
+}
+
+// DefaultSecretPatterns returns the file patterns that likely hold secrets.
+// A new config is seeded with them, and they apply whenever the config does
+// not list any. See gitops.SensitivePaths for the pattern syntax.
+func DefaultSecretPatterns() []string {
+	return []string{
+		".env", ".env.*", "!.env.example",
+		"*.pem", "*.p12", "*.key",
+		"id_rsa", "id_dsa", "id_ed25519",
+	}
+}
+
+// EffectiveSecretPatterns returns the configured secret patterns, or
+// DefaultSecretPatterns when none are configured.
+func (c *Config) EffectiveSecretPatterns() []string {
+	if len(c.SecretPatterns) == 0 {
+		return DefaultSecretPatterns()
+	}
+	return c.SecretPatterns
 }

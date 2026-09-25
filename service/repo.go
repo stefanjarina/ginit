@@ -209,7 +209,10 @@ func (r *RepoService) checkSensitiveFiles(dir string) error {
 	if err != nil {
 		return err
 	}
-	found := gitops.SensitivePaths(staged)
+	found, err := gitops.SensitivePaths(staged, r.Cfg.EffectiveSecretPatterns())
+	if err != nil {
+		return gerrors.NewHint(err.Error(), "fix secretpatterns in the ginit config file", nil)
+	}
 	if len(found) == 0 {
 		return nil
 	}

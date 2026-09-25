@@ -323,6 +323,13 @@ func TestInspectRemoteOutsideRepository(t *testing.T) {
 	}
 }
 
+// defaultPatterns mirrors config.DefaultSecretPatterns; gitops cannot import config.
+var defaultPatterns = []string{
+	".env", ".env.*", "!.env.example",
+	"*.pem", "*.p12", "*.key",
+	"id_rsa", "id_dsa", "id_ed25519",
+}
+
 func TestSensitivePaths(t *testing.T) {
 	paths := []string{
 		".env", ".env.local", ".env.example", "config/.env.production", "app/.env.example",
@@ -333,8 +340,29 @@ func TestSensitivePaths(t *testing.T) {
 		".env", ".env.local", "config/.env.production",
 		"server.pem", "cert.p12", "tls/private.key", "id_rsa", ".ssh/id_dsa", "id_ed25519",
 	}
-	if got := SensitivePaths(paths); !slices.Equal(got, want) {
+	got, err := SensitivePaths(paths, defaultPatterns)
+	if err != nil {
+		t.Fatalf("SensitivePaths() error = %v", err)
+	}
+	if !slices.Equal(got, want) {
 		t.Errorf("SensitivePaths() = %q, want %q", got, want)
+	}
+}
+
+func TestSensitivePathsCustomPatterns(t *testing.T) {
+	paths := []string{"secrets/prod.yml", "config/secrets/dev.yml", "creds.json", "creds.json.example"}
+	got, err := SensitivePaths(paths, []string{"secrets/*", "creds.*", "!*.example"})
+	if err != nil {
+		t.Fatalf("SensitivePaths() error = %v", err)
+	}
+	if want := []string{"secrets/prod.yml", "creds.json"}; !slices.Equal(got, want) {
+		t.Errorf("SensitivePaths() = %q, want %q", got, want)
+	}
+}
+
+func TestSensitivePathsInvalidPattern(t *testing.T) {
+	if _, err := SensitivePaths([]string{"a"}, []string{"[a-"}); err == nil {
+		t.Fatal("SensitivePaths() error = nil, want invalid pattern error")
 	}
 }
 

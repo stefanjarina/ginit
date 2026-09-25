@@ -196,6 +196,37 @@ func TestCommitLocalGitNoSensitiveFilesDoesNotAsk(t *testing.T) {
 	}
 }
 
+func TestCommitLocalGitUsesConfiguredSecretPatterns(t *testing.T) {
+	console.Accessible = true
+	isolateGit(t)
+	t.Setenv("GIT_AUTHOR_NAME", "Test")
+	t.Setenv("GIT_AUTHOR_EMAIL", "test@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "Test")
+	t.Setenv("GIT_COMMITTER_EMAIL", "test@example.com")
+	dir := t.TempDir()
+	for _, name := range []string{".env", "prod.secret"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := newTestService()
+	svc.Cfg.SecretPatterns = []string{"*.secret"}
+	if err := svc.PrepareLocalGit(dir); err != nil {
+		t.Fatalf("PrepareLocalGit() error = %v", err)
+	}
+	var asked []string
+	svc.ConfirmSensitiveFiles = func(paths []string) (bool, error) {
+		asked = paths
+		return false, nil
+	}
+	if err := svc.CommitLocalGit(dir); err == nil {
+		t.Fatal("CommitLocalGit() error = nil, want cancelled error")
+	}
+	if !reflect.DeepEqual(asked, []string{"prod.secret"}) {
+		t.Errorf("asked about %q, want [prod.secret]", asked)
+	}
+}
+
 func TestBeforeCreateErrorAborts(t *testing.T) {
 	svc := newTestService()
 	called := false
