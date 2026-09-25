@@ -138,3 +138,21 @@ func (c *Config) RemoveValue(provider, key string) error {
 	}
 	return nil
 }
+
+// DefaultBranchKey is the config command key for the top-level branch that
+// `git init -b` uses. It is addressed without a provider.
+const DefaultBranchKey = "defaultbranch"
+
+// IsDefaultBranchKey reports whether key names the top-level default branch.
+func IsDefaultBranchKey(key string) bool {
+	return strings.EqualFold(key, DefaultBranchKey)
+}
+
+func (c *Config) SetDefaultBranch(branch string) error {
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return fmt.Errorf("%s must not be empty", DefaultBranchKey)
+	}
+	c.DefaultBranch = branch
+	return nil
+}
