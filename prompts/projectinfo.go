@@ -42,7 +42,10 @@ func AskForProjectInfo(provider string, availableTypes []string, accessibility b
 		}
 	}
 
-	ignoreGroup := GetGitIgnoreGroup(availableTypes, &pi.ExcludedLocalFiles, &pi.GitIgnoreConfigs)
+	ignoreGroup, err := GetGitIgnoreGroup(availableTypes, &pi.ExcludedLocalFiles, &pi.GitIgnoreConfigs)
+	if err != nil {
+		return nil, err
+	}
 	if ignoreGroup == nil {
 		return pi, nil
 	}

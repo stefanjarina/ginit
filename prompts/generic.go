@@ -2,7 +2,6 @@ package prompts
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"slices"
 	"strings"
@@ -51,9 +50,10 @@ func VisibilityChoices(repository string) []string {
 //
 // Order: gitignore.io templates first,
 // custom files second. Each multiselect is only included when it has options
-// (the template list is empty when gitignore.io is unavailable). Returns nil
-// when there is nothing to choose from.
-func GetGitIgnoreGroup(availableTypes []string, filesVal *[]string, typesVal *[]string) *huh.Group {
+// (the template list is empty when gitignore.io is unavailable). Returns a nil
+// group when there is nothing to choose from, and an error when the working
+// directory cannot be listed.
+func GetGitIgnoreGroup(availableTypes []string, filesVal *[]string, typesVal *[]string) (*huh.Group, error) {
 	defaultFiles := []string{"node_modules"}
 	defaultTypes := []string{"windows", "linux", "macos", "node", "dotnetcore", "visualstudiocode", "webstorm+all"}
 
@@ -71,9 +71,12 @@ func GetGitIgnoreGroup(availableTypes []string, filesVal *[]string, typesVal *[]
 
 	currentDir, err := os.Getwd()
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("get working directory: %w", err)
 	}
-	files := getListOfFiles(currentDir)
+	files, err := getListOfFiles(currentDir)
+	if err != nil {
+		return nil, err
+	}
 
 	var filesOptions []huh.Option[string]
 	for _, f := range files {
@@ -105,9 +108,9 @@ func GetGitIgnoreGroup(availableTypes []string, filesVal *[]string, typesVal *[]
 		)
 	}
 	if len(fields) == 0 {
-		return nil
+		return nil, nil
 	}
-	return huh.NewGroup(fields...).WithHeight(10)
+	return huh.NewGroup(fields...).WithHeight(10), nil
 }
 
 // AskForToken runs a single-input form for a PAT.
@@ -218,14 +221,17 @@ func toTitle(value string) string {
 	return strings.ToUpper(value[:1]) + value[1:]
 }
 
-func getListOfFiles(name string) []string {
+func getListOfFiles(name string) ([]string, error) {
 	file, err := os.Open(name)
 	if err != nil {
-		log.Fatalf("failed opening directory: %s", err)
+		return nil, fmt.Errorf("open directory: %w", err)
 	}
 	defer file.Close()
 
-	list, _ := file.Readdirnames(0)
+	list, err := file.Readdirnames(0)
+	if err != nil {
+		return nil, fmt.Errorf("read directory %s: %w", name, err)
+	}
 	// .git in .gitignore has no effect on git's own metadata directory.
-	return slices.DeleteFunc(list, func(n string) bool { return n == ".git" })
+	return slices.DeleteFunc(list, func(n string) bool { return n == ".git" }), nil
 }

@@ -44,7 +44,12 @@ var GitignoreCmd = &cobra.Command{
 		}
 
 		var customFiles, ignoreTypes []string
-		form := huh.NewForm(prompts.GetGitIgnoreGroup(availableTypes, &customFiles, &ignoreTypes))
+		group, err := prompts.GetGitIgnoreGroup(availableTypes, &customFiles, &ignoreTypes)
+		if err != nil {
+			console.Error("list files", err)
+			os.Exit(1)
+		}
+		form := huh.NewForm(group)
 		if err := form.WithAccessible(accessible).WithLayout(huh.LayoutStack).Run(); err != nil {
 			console.Error("prompt", err)
 			os.Exit(1)
