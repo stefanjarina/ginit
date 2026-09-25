@@ -551,13 +551,6 @@ func (r *RepoService) handleGitlab() (*ProjectInfo, error) {
 
 	availableTypes := r.fetchGitignoreList()
 
-	// Project info (incl. visibility) first,
-	// THEN authenticate + GetGroups.
-	pi, err := prompts.AskForProjectInfo("gitlab", nil, availableTypes, r.Accessibility)
-	if err != nil {
-		return nil, err
-	}
-
 	client := api.NewGitlabClient(token, baseUrl)
 	var groups []api.GitlabGroup
 	if err := console.Run("Authenticating and fetching GitLab groups", func() error {
@@ -572,6 +565,11 @@ func (r *RepoService) handleGitlab() (*ProjectInfo, error) {
 	}
 
 	groupId, err := prompts.AskForGitlabGroup(groups, r.Accessibility)
+	if err != nil {
+		return nil, err
+	}
+
+	pi, err := prompts.AskForProjectInfo("gitlab", nil, availableTypes, r.Accessibility)
 	if err != nil {
 		return nil, err
 	}
