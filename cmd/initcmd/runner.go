@@ -17,7 +17,9 @@ func accessibilityFromRoot(cmd *cobra.Command) bool {
 	return v
 }
 
-// runProvider implements the full init flow for one provider
+// runProvider implements the full init flow for one provider.
+// Service steps run through console.Run, which already prints their failure;
+// console.Error skips those errors, so each failure is reported only once.
 func runProvider(cmd *cobra.Command, provider string) {
 	cwd, err := os.Getwd()
 	if err != nil {
