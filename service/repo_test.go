@@ -128,3 +128,93 @@ func TestBeforeCreateErrorAborts(t *testing.T) {
 		t.Fatalf("beforeCreate() = %v (called=%v), want hook error", err, called)
 	}
 }
+
+// repoWithOrigin creates a git repository in a temp dir, makes it the working
+// directory and, when origin is not empty, adds it as the origin remote.
+func repoWithOrigin(t *testing.T, origin string) string {
+	t.Helper()
+	isolateGit(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := gitops.Init(dir, "main"); err != nil {
+		t.Fatal(err)
+	}
+	if origin != "" {
+		if err := gitops.AddRemote(dir, "origin", origin); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+// recordingConfirm returns a ConfirmRemoteUpdate that records whether it was
+// called and answers with answer.
+func recordingConfirm(answer bool, called *bool) func(string, string) (bool, error) {
+	return func(string, string) (bool, error) {
+		*called = true
+		return answer, nil
+	}
+}
+
+const (
+	oldOrigin = "git@example.com:me/old.git"
+	newOrigin = "git@example.com:me/new.git"
+)
+
+func TestCreateRemote(t *testing.T) {
+	console.Accessible = true
+
+	tests := []struct {
+		name       string
+		existing   string
+		force      bool
+		answer     bool
+		wantAsked  bool
+		wantURL    string
+		wantErrSub string
+	}{
+		{name: "missing origin is added", wantURL: newOrigin},
+		{name: "identical origin is kept", existing: newOrigin, wantURL: newOrigin},
+		{name: "identical origin is kept with force", existing: newOrigin, force: true, wantURL: newOrigin},
+		{name: "different origin is updated when confirmed", existing: oldOrigin, answer: true, wantAsked: true, wantURL: newOrigin},
+		{name: "different origin is kept when declined", existing: oldOrigin, answer: false, wantAsked: true, wantURL: oldOrigin, wantErrSub: "left unchanged"},
+		{name: "different origin is updated with force without asking", existing: oldOrigin, force: true, wantURL: newOrigin},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := repoWithOrigin(t, tt.existing)
+			asked := false
+			svc := newTestService()
+			svc.Force = tt.force
+			svc.ConfirmRemoteUpdate = recordingConfirm(tt.answer, &asked)
+
+			err := svc.CreateRemote(newOrigin)
+			if tt.wantErrSub == "" && err != nil {
+				t.Fatalf("CreateRemote() error = %v", err)
+			}
+			if tt.wantErrSub != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErrSub)) {
+				t.Fatalf("CreateRemote() error = %v, want it to contain %q", err, tt.wantErrSub)
+			}
+			if asked != tt.wantAsked {
+				t.Errorf("confirmation asked = %v, want %v", asked, tt.wantAsked)
+			}
+			if got, err := gitops.RemoteURL(dir, "origin"); err != nil || got != tt.wantURL {
+				t.Errorf("origin = %q, %v; want %q", got, err, tt.wantURL)
+			}
+		})
+	}
+}
+
+func TestCreateRemotePromptError(t *testing.T) {
+	console.Accessible = true
+	dir := repoWithOrigin(t, oldOrigin)
+	svc := newTestService()
+	svc.ConfirmRemoteUpdate = func(string, string) (bool, error) { return false, os.ErrClosed }
+
+	if err := svc.CreateRemote(newOrigin); !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("CreateRemote() error = %v, want prompt error", err)
+	}
+	if got, _ := gitops.RemoteURL(dir, "origin"); got != oldOrigin {
+		t.Errorf("origin = %q, want unchanged %q", got, oldOrigin)
+	}
+}

@@ -270,3 +270,54 @@ func TestPushCurrentBranchNotMain(t *testing.T) {
 		t.Fatalf("upstream = %q (%v), want origin/feature", upstream, err)
 	}
 }
+
+func TestInspectRemote(t *testing.T) {
+	isolateGit(t)
+	dir := t.TempDir()
+	if err := Init(dir, "main"); err != nil {
+		t.Fatal(err)
+	}
+	const url = "git@example.com:me/demo.git"
+
+	status, current, err := InspectRemote(dir, "origin", url)
+	if err != nil || status != RemoteMissing || current != "" {
+		t.Fatalf("missing origin: InspectRemote = %v, %q, %v; want RemoteMissing", status, current, err)
+	}
+
+	// A remote whose name only starts with "origin" must not count.
+	if err := AddRemote(dir, "origin2", url); err != nil {
+		t.Fatal(err)
+	}
+	if status, _, _ := InspectRemote(dir, "origin", url); status != RemoteMissing {
+		t.Fatalf("origin2 only: status = %v, want RemoteMissing", status)
+	}
+
+	if err := AddRemote(dir, "origin", url); err != nil {
+		t.Fatal(err)
+	}
+	status, current, err = InspectRemote(dir, "origin", url)
+	if err != nil || status != RemoteMatches || current != url {
+		t.Fatalf("same URL: InspectRemote = %v, %q, %v; want RemoteMatches", status, current, err)
+	}
+
+	const other = "https://example.com/me/demo.git"
+	status, current, err = InspectRemote(dir, "origin", other)
+	if err != nil || status != RemoteDiffers || current != url {
+		t.Fatalf("different URL: InspectRemote = %v, %q, %v; want RemoteDiffers with %q", status, current, err, url)
+	}
+
+	if err := SetRemoteURL(dir, "origin", other); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := RemoteURL(dir, "origin"); err != nil || got != other {
+		t.Fatalf("after SetRemoteURL: RemoteURL = %q, %v; want %q", got, err, other)
+	}
+}
+
+func TestInspectRemoteOutsideRepository(t *testing.T) {
+	isolateGit(t)
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(t.TempDir()))
+	if _, _, err := InspectRemote(t.TempDir(), "origin", "x"); err == nil {
+		t.Fatal("expected an error outside a git repository")
+	}
+}

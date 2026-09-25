@@ -153,6 +153,50 @@ func AddRemote(dir, name, url string) error {
 	return run(dir, "remote", "add", name, url)
 }
 
+// SetRemoteURL points an existing remote at url.
+func SetRemoteURL(dir, name, url string) error {
+	return run(dir, "remote", "set-url", name, url)
+}
+
+// RemoteStatus describes how a configured remote relates to a wanted URL.
+type RemoteStatus int
+
+const (
+	// RemoteMissing means no remote with that name exists.
+	RemoteMissing RemoteStatus = iota
+	// RemoteMatches means the remote exists and already has the wanted URL.
+	RemoteMatches
+	// RemoteDiffers means the remote exists with a different URL.
+	RemoteDiffers
+)
+
+// InspectRemote reports whether the named remote exists in dir and whether
+// it points at url. current is the configured URL when the remote exists.
+func InspectRemote(dir, name, url string) (status RemoteStatus, current string, err error) {
+	names, err := output(dir, "remote")
+	if err != nil {
+		return RemoteMissing, "", gerrors.New("git remote", err)
+	}
+	found := false
+	for _, n := range strings.Split(names, "\n") {
+		if strings.TrimSpace(n) == name {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return RemoteMissing, "", nil
+	}
+	current, err = RemoteURL(dir, name)
+	if err != nil {
+		return RemoteMissing, "", err
+	}
+	if current == url {
+		return RemoteMatches, current, nil
+	}
+	return RemoteDiffers, current, nil
+}
+
 // Push pushes branch to remote and sets it as the upstream.
 func Push(dir, remote, branch string) error {
 	return runInteractive(dir, "push", "--set-upstream", remote, branch)

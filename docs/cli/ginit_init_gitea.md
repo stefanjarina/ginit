@@ -17,7 +17,7 @@ ginit init gitea [flags]
 ```
       --accessibility   Enable accessibility features
       --config string   config file (default is $HOME/.config/ginit/ginit.yaml)
-  -f, --force           Force init even if a git repository already exists
+  -f, --force           Replace an existing git repository and update an existing origin without asking
       --no-color        Disable colored output
       --only-push       Only push the existing local repository to its configured origin; do not create a remote repository
       --only-remote     Only create the remote repository and print its clone URL; do not touch the local directory
