@@ -25,6 +25,7 @@ type GitlabNamespace struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
 	Path string `json:"path"`
+	Kind string `json:"kind"`
 }
 
 type GitlabGroup struct {
@@ -78,9 +79,11 @@ func (gc *GitlabClient) GetGroups(visibility string) ([]GitlabGroup, error) {
 		return nil, fmt.Errorf("not authenticated; call Connect first")
 	}
 
-	var nss []GitlabNamespace
-	q := url.Values{"search": {gc.user.Name}}
-	if err := gc.get("namespaces?"+q.Encode(), &nss); err != nil {
+	// Look the personal namespace up by username rather than searching by
+	// display name: search is a partial match and can return someone else's
+	// namespace first.
+	var ns GitlabNamespace
+	if err := gc.get("namespaces/"+url.PathEscape(gc.user.Username), &ns); err != nil {
 		return nil, err
 	}
 
@@ -97,8 +100,8 @@ func (gc *GitlabClient) GetGroups(visibility string) ([]GitlabGroup, error) {
 	}
 
 	out := make([]GitlabGroup, 0, len(groups)+1)
-	if len(nss) > 0 {
-		out = append(out, GitlabGroup{ID: nss[0].ID, Name: gc.user.Name, Path: nss[0].Path})
+	if ns.Kind == "user" && ns.Path == gc.user.Username {
+		out = append(out, GitlabGroup{ID: ns.ID, Name: gc.user.Name, Path: ns.Path})
 	}
 	out = append(out, groups...)
 	return out, nil
