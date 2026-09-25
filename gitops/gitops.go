@@ -73,3 +73,25 @@ func HasGitDir(dir string) bool {
 func RemoveGitDir(dir string) error {
 	return os.RemoveAll(filepath.Join(dir, ".git"))
 }
+
+// IsRepository reports whether dir is inside a git work tree.
+func IsRepository(dir string) bool {
+	return run(dir, "rev-parse", "--is-inside-work-tree") == nil
+}
+
+// RemoteURL returns the URL configured for the named remote.
+func RemoteURL(dir, name string) (string, error) {
+	cmd := exec.Command("git", "remote", "get-url", name)
+	cmd.Dir = dir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		msg := "git remote"
+		if stderr.Len() > 0 {
+			msg = fmt.Sprintf("%s: %s", msg, bytes.TrimSpace(stderr.Bytes()))
+		}
+		return "", gerrors.New(msg, err)
+	}
+	return string(bytes.TrimSpace(out)), nil
+}
