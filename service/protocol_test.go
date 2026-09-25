@@ -36,11 +36,11 @@ func createGithub(t *testing.T, body string) api.CloneURLs {
 
 func createGitlab(t *testing.T, body string) api.CloneURLs {
 	srv := fakeProvider(t, body)
-	urls, err := api.NewGitlabClient("secret", srv.URL).CreateRepository(1, "demo", "", "private", "main")
+	project, err := api.NewGitlabClient("secret", srv.URL).CreateRepository(1, "demo", "", "private")
 	if err != nil {
 		t.Fatalf("gitlab CreateRepository() error = %v", err)
 	}
-	return urls
+	return project.URLs
 }
 
 func TestRemoteUrlFollowsProtocolSetting(t *testing.T) {

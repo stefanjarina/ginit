@@ -74,6 +74,16 @@ type RepoService struct {
 	// ConfirmSensitiveFiles asks whether the initial commit may include
 	// staged paths that likely contain secrets.
 	ConfirmSensitiveFiles func(paths []string) (bool, error)
+
+	// ConfirmPush asks whether to push now. note, when not empty, explains
+	// what declining means for the remote.
+	ConfirmPush func(note string) (bool, error)
+
+	// initialPushNote is shown with the push prompt of PushInitialBranch.
+	initialPushNote string
+	// afterInitialPush, when set by a provider handler, runs after
+	// PushInitialBranch pushed branch, e.g. to record it as the remote default.
+	afterInitialPush func(branch string) error
 }
 
 // GitignoreClient is the subset of the gitignore.io client used by the init flow.
@@ -93,6 +103,9 @@ func New(cfg *config.Config, cfgPath string, accessibility bool) *RepoService {
 		},
 		ConfirmSensitiveFiles: func(paths []string) (bool, error) {
 			return prompts.AskToCommitSensitiveFiles(paths, accessibility)
+		},
+		ConfirmPush: func(note string) (bool, error) {
+			return prompts.AskToPushToRemote(note, accessibility)
 		},
 	}
 }
@@ -294,34 +307,49 @@ func (r *RepoService) PushToRemote() error {
 	if err != nil {
 		return err
 	}
-	return r.push(cwd, branch)
+	_, err = r.push(cwd, branch, "")
+	return err
 }
 
 // PushInitialBranch prompts the user, then pushes the configured default
 // branch that PrepareLocalGit created. Hosts that do not take a default branch
 // on create adopt the first branch pushed to an empty repository, so this
-// makes the remote default match the local one.
+// makes the remote default match the local one. A provider handler may add a
+// note to the prompt and a step that runs after the push.
 func (r *RepoService) PushInitialBranch() error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	return r.push(cwd, r.Cfg.EffectiveDefaultBranch())
-}
-
-func (r *RepoService) push(dir, branch string) error {
-	push, err := prompts.AskToPushToRemote(r.Accessibility)
-	if err != nil {
+	branch := r.Cfg.EffectiveDefaultBranch()
+	pushed, err := r.push(cwd, branch, r.initialPushNote)
+	if err != nil || !pushed || r.afterInitialPush == nil {
 		return err
 	}
+	return r.afterInitialPush(branch)
+}
+
+// push asks, then pushes branch. It reports whether the push happened.
+func (r *RepoService) push(dir, branch, note string) (bool, error) {
+	push, err := r.confirmPush(note)
+	if err != nil {
+		return false, err
+	}
 	if !push {
-		return nil
+		return false, nil
 	}
 	if err := gitops.Push(dir, "origin", branch); err != nil {
-		return gerrors.New("push to remote", err)
+		return false, gerrors.New("push to remote", err)
 	}
 	console.Success("Pushed to remote")
-	return nil
+	return true, nil
+}
+
+func (r *RepoService) confirmPush(note string) (bool, error) {
+	if r.ConfirmPush == nil {
+		return prompts.AskToPushToRemote(note, r.Accessibility)
+	}
+	return r.ConfirmPush(note)
 }
 
 // ----- provider handlers -----
@@ -552,20 +580,47 @@ func (r *RepoService) handleGitlab() (*ProjectInfo, error) {
 		return nil, err
 	}
 
-	var urls api.CloneURLs
+	var project api.GitlabProject
 	if err := console.Run("Creating repo on GitLab", func() error {
-		u, e := client.CreateRepository(groupId, pi.Name, pi.Description, pi.Visibility, r.Cfg.EffectiveDefaultBranch())
-		urls = u
+		p, e := client.CreateRepository(groupId, pi.Name, pi.Description, pi.Visibility)
+		project = p
 		return e
 	}); err != nil {
 		return nil, err
 	}
-	remoteUrl, err := r.remoteUrl("gitlab", urls)
+	remoteUrl, err := r.remoteUrl("gitlab", project.URLs)
 	if err != nil {
 		return nil, err
 	}
 	pi.RemoteUrl = remoteUrl
+	r.setGitlabDefaultBranchAfterPush(client, project.ID)
 	return pi, nil
+}
+
+// gitlabDefaultBranchSetter is the part of the GitLab client used after the
+// initial push.
+type gitlabDefaultBranchSetter interface {
+	SetDefaultBranch(projectId int, branch string) error
+}
+
+// setGitlabDefaultBranchAfterPush arranges for the pushed branch to be
+// recorded as the project's default branch. GitLab cannot store a default
+// branch on an empty project, so the push prompt says what declining means.
+func (r *RepoService) setGitlabDefaultBranchAfterPush(client gitlabDefaultBranchSetter, projectId int) {
+	branch := r.Cfg.EffectiveDefaultBranch()
+	r.initialPushNote = fmt.Sprintf("GitLab cannot set a default branch on an empty project. "+
+		"If you skip the push, GitLab uses the first branch pushed later as the default, not necessarily %q.", branch)
+	r.afterInitialPush = func(branch string) error {
+		err := console.RunOptional("Setting GitLab default branch to "+branch, func() error {
+			return client.SetDefaultBranch(projectId, branch)
+		})
+		if err != nil {
+			// The push succeeded and GitLab adopts the first pushed branch,
+			// so this is only a warning.
+			console.Warning(fmt.Sprintf("Check the project's default branch in GitLab settings; it should be %q", branch))
+		}
+		return nil
+	}
 }
 
 func (r *RepoService) handleBitbucket() (*ProjectInfo, error) {
