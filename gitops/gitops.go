@@ -153,8 +153,33 @@ func AddRemote(dir, name, url string) error {
 	return run(dir, "remote", "add", name, url)
 }
 
+// Push pushes branch to remote and sets it as the upstream.
 func Push(dir, remote, branch string) error {
 	return runInteractive(dir, "push", "--set-upstream", remote, branch)
+}
+
+// CurrentBranch returns the name of the branch HEAD points to. It also works
+// on an unborn branch (no commits yet) and fails when HEAD is detached.
+func CurrentBranch(dir string) (string, error) {
+	cmd := exec.Command("git", "symbolic-ref", "--quiet", "--short", "HEAD")
+	cmd.Dir = dir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		// symbolic-ref --quiet exits 1 without output when HEAD is not a symbolic ref.
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 && stderr.Len() == 0 {
+			return "", gerrors.NewHint("HEAD is detached, so there is no branch to push",
+				"check out a branch first (e.g. git switch <branch>)", nil)
+		}
+		msg := "git symbolic-ref"
+		if stderr.Len() > 0 {
+			msg = fmt.Sprintf("%s: %s", msg, bytes.TrimSpace(stderr.Bytes()))
+		}
+		return "", gerrors.New(msg, err)
+	}
+	return string(bytes.TrimSpace(out)), nil
 }
 
 func HasGitDir(dir string) bool {

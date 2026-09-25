@@ -148,22 +148,24 @@ func (r *RepoService) CreateRemote(remoteUrl string) error {
 	})
 }
 
-// PushToRemote prompts the user, then runs `git push --set-upstream origin <branch>`.
+// PushToRemote prompts the user, then runs `git push --set-upstream origin <branch>`
+// for the currently checked-out branch.
 func (r *RepoService) PushToRemote() error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	// Resolve the branch before prompting so a detached HEAD fails early.
+	branch, err := gitops.CurrentBranch(cwd)
+	if err != nil {
+		return err
+	}
 	push, err := prompts.AskToPushToRemote(r.Accessibility)
 	if err != nil {
 		return err
 	}
 	if !push {
 		return nil
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	branch := r.Cfg.DefaultBranch
-	if branch == "" {
-		branch = "main"
 	}
 	if err := gitops.Push(cwd, "origin", branch); err != nil {
 		return gerrors.New("push to remote", err)
