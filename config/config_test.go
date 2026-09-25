@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -197,5 +198,44 @@ func TestSaveRestrictsExistingFile(t *testing.T) {
 	}
 	if got.DefaultBranch != "trunk" || got.GetValue("github", "token") != "secret" {
 		t.Errorf("Load() = %+v, want the saved config", got)
+	}
+}
+
+func TestSaveFailedWriteKeepsPreviousConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ginit.yaml")
+	original := []byte("default_branch: main\nproviders:\n- name: github\n  token: secret\n")
+	if err := os.WriteFile(path, original, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	errDiskFull := errors.New("disk full")
+	defer func(orig func(*os.File, []byte) error) { writeData = orig }(writeData)
+	writeData = func(f *os.File, data []byte) error {
+		f.Write(data[:len(data)/2])
+		return errDiskFull
+	}
+
+	cfg := &Config{DefaultBranch: "trunk", Providers: []Provider{{Name: "github", Token: "other"}}}
+	if err := Save(path, cfg); !errors.Is(err, errDiskFull) {
+		t.Fatalf("Save() error = %v, want %v", err, errDiskFull)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if string(got) != string(original) {
+		t.Errorf("config = %q, want the original %q", got, original)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir() error = %v", err)
+	}
+	if len(entries) != 1 {
+		names := make([]string, 0, len(entries))
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("dir holds %v, want only ginit.yaml", names)
 	}
 }

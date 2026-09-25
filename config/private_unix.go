@@ -8,24 +8,17 @@ func mkdirPrivate(dir string) error {
 	return os.MkdirAll(dir, 0o700)
 }
 
-// writePrivate writes data to path with mode 0600. An existing file is
-// narrowed to 0600 before any new content is written.
-func writePrivate(path string, data []byte) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0o600)
+// createPrivateTemp creates a new file in dir with mode 0600.
+func createPrivateTemp(dir, pattern string) (*os.File, error) {
+	f, err := os.CreateTemp(dir, pattern)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	// CreateTemp already uses 0600; state it rather than rely on that.
 	if err := f.Chmod(0o600); err != nil {
 		f.Close()
-		return err
+		os.Remove(f.Name())
+		return nil, err
 	}
-	if err := f.Truncate(0); err != nil {
-		f.Close()
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return err
-	}
-	return f.Close()
+	return f, nil
 }
